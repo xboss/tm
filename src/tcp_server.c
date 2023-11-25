@@ -225,7 +225,7 @@ bool tcp_server_send(tcp_server_t *tcp_serv, int conn_id, const char *buf, ssize
 
     tcp_connection_t *conn = get_conn(tcp_serv, conn_id);
     if (!conn) {
-        fprintf(stderr, "tcp server connection does not exsit\n");
+        fprintf(stderr, "tcp server connection does not exist when send %d\n", conn_id);
         return false;
     }
 
@@ -240,19 +240,26 @@ bool tcp_server_send(tcp_server_t *tcp_serv, int conn_id, const char *buf, ssize
     return true;
 }
 
-tcp_connection_t *tcp_server_get_conn(tcp_server_t *tcp_serv, int conn_id) {
+tcp_connection_t *get_tcp_server_conn(tcp_server_t *tcp_serv, int conn_id) {
     if (!tcp_serv) {
         return NULL;
     }
     return get_conn(tcp_serv, conn_id);
 }
 
+void close_tcp_server_conn(tcp_server_t *tcp_serv, int conn_id) {
+    tcp_connection_t *conn = get_conn(tcp_serv, conn_id);
+    if (conn) {
+        uv_close((uv_handle_t *)conn->client, on_uv_close);
+    }
+}
+
 /* -------------------------------------------------------------------------- */
 /*                                    test                                    */
 /* -------------------------------------------------------------------------- */
-int main(int argc, char const *argv[]) {
-    uv_loop_t *loop = uv_default_loop();
-    tcp_server_t *tcp_serv = init_tcp_server(loop, "127.0.0.1", 6666, NULL, NULL, NULL);
-    assert(tcp_serv);
-    return uv_run(loop, UV_RUN_DEFAULT);
-}
+// int main(int argc, char const *argv[]) {
+//     uv_loop_t *loop = uv_default_loop();
+//     tcp_server_t *tcp_serv = init_tcp_server(loop, "127.0.0.1", 6666, NULL, NULL, NULL);
+//     assert(tcp_serv);
+//     return uv_run(loop, UV_RUN_DEFAULT);
+// }

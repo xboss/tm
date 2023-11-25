@@ -24,5 +24,6 @@ all: $(OBJ)
 clean:
 	rm -rf $(OUTPUT_DIR)*
 
+# $(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_server.c -o $(OUTPUT_DIR)tcp_server 
 test:
-	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_server.c -o $(OUTPUT_DIR)tcp_server 
+	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_server.c ./src/socks5_server.c -o $(OUTPUT_DIR)socks5_server 

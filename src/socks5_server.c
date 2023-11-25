@@ -2,143 +2,253 @@
 
 #include "utils.h"
 
-// #define DEF_SOCKS5_IP 127.0.0.1
-// #define DEF_SOCKS5_PORT 6666
-#define DEF_BACKLOG 128
-
 /* -------------------------------------------------------------------------- */
-/*                          socks5 connection manager                         */
+/*                               socks5 protocol                              */
 /* -------------------------------------------------------------------------- */
-static socks5_connection_t *get_conn(socks5_server_t *socks5, int id) {
-    socks5_connection_t *conn = NULL;
-    HASH_FIND_INT(socks5->conns, &id, conn);
-    return conn;
-}
 
-static socks5_connection_t *init_conn(socks5_server_t *socks5, uv_tcp_t *cli, void *data) {
-    socks5_connection_t *conn = (socks5_connection_t *)_CALLOC(1, sizeof(socks5_connection_t));
-    conn->socks5 = socks5;
-    conn->id = cli->accepted_fd;
-    conn->data = data;
-    HASH_ADD_INT(socks5->conns, id, conn);
-    return conn;
-}
+// #define SS5_VER 0x05
+// #define SS5_MSG_AUTH 1
+// #define SS5_MSG_AUTH_ACK 2
+// #define SS5_MSG_AUTH_SUB 3
+// #define SS5_MSG_AUTH_SUB_ACK 4
+// #define SS5_MSG_AUTH_REQ 5
+// #define SS5_MSG_AUTH_REQ_ACK 6
 
-static void free_conn(socks5_connection_t *conn) {
-    if (!conn) {
-        return;
-    }
-    if (conn->socks5 && conn->socks5->conns) {
-        HASH_DEL(conn->socks5->conns, conn);
-    }
-    _FREE_IF(conn);
-}
+// // +----+----------+----------+
+// // |VER | NMETHODS | METHODS  |
+// // +----+----------+----------+
+// // | 1  |    1     | 1 to 255 |
+// // +----+----------+----------+
+// typedef struct {
+//     u_char ver;
+//     u_char nmethods;
+//     u_char method[255];
+// } ss5_auth_t;
+
+// // +----+--------+
+// // |VER | METHOD |
+// // +----+--------+
+// // | 1  |   1    |
+// // +----+--------+
+// typedef struct {
+//     u_char ver;
+//     u_char method;
+// } ss5_auth_ack_t;
+
+// // +----+------+----------+------+----------+
+// // |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
+// // +----+------+----------+------+----------+
+// // | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
+// // +----+------+----------+------+----------+
+// typedef struct {
+//     u_char ver;
+//     u_char ulen;
+//     u_char plen;
+//     u_char uname[255];
+//     u_char passwd[255];
+// } ss5_auth_sub_t;
+
+// // +----+-----+-------+------+----------+----------+
+// // |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
+// // +----+-----+-------+------+----------+----------+
+// // | 1  |  1  | X'00' |  1   | Variable |    2     |
+// // +----+-----+-------+------+----------+----------+
+// typedef struct {
+//     u_char ver;
+//     u_char cmd;
+//     u_char rsv;
+//     u_char atyp;
+//     u_char *dst_addr;
+//     uint16_t dst_port;
+// } ss5_req_t;
+
+// // +----+-----+-------+------+----------+----------+
+// // |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
+// // +----+-----+-------+------+----------+----------+
+// // | 1  |  1  | X'00' |  1   | Variable |    2     |
+// // +----+-----+-------+------+----------+----------+
+// typedef struct {
+//     u_char ver;
+//     u_char rep;
+//     u_char rsv;
+//     u_char atyp;
+//     u_char *bnd_addr;
+//     uint16_t bnd_port;
+// } ss5_req_ack_t;
+
+// // typedef struct {
+// //     int type;
+// //     u_char ver;
+// //     u_char nmethods;
+// //     u_char methods[255];
+// //     u_char method;
+// //     u_char ulen;
+// //     u_char plen;
+// //     u_char uname[255];
+// //     u_char passwd[255];
+
+// //     u_char rep;
+// //     u_char rsv;
+// //     u_char atyp;
+// //     u_char addr;
+// //     uint16_t port;
+// // } ss5_msg_t;
+
+// static u_char *pack_ss5_auth(const ss5_auth_t *msg, int *len) {
+//     if (!msg || !len) {
+//         return NULL;
+//     }
+//     *len = msg->nmethods + 2;
+//     u_char *raw = (u_char *)_CALLOC(1, *len);
+//     _CHECK_OOM(raw);
+//     raw[0] = SS5_VER;
+//     raw[1] = msg->nmethods;
+//     memcpy(raw + 2, msg->method, msg->nmethods);
+//     return raw;
+// }
+
+// static ss5_auth_t *unpack_ss5_auth(const u_char *buf, int len) {
+//     if (!buf || len <= 2) {
+//         return NULL;
+//     }
+//     ss5_auth_t *msg = (ss5_auth_t *)_CALLOC(1, sizeof(ss5_auth_t));
+//     msg->ver = *buf;
+//     msg->nmethods = *(buf + 1);
+//     memcpy(msg->method, buf + 2, msg->nmethods);
+//     return msg;
+// }
+
+// static u_char *pack_ss5_auth_ack(const ss5_auth_ack_t *msg, int *len) {
+//     if (!msg || !len) {
+//         return NULL;
+//     }
+//     *len = 2;
+//     u_char *raw = (u_char *)_CALLOC(1, 2);
+//     _CHECK_OOM(raw);
+//     raw[0] = SS5_VER;
+//     raw[1] = msg->method;
+//     return raw;
+// }
+
+// static ss5_auth_ack_t *unpack_ss5_auth_ack(const u_char *buf, int len) {
+//     if (!buf || len <= 2) {
+//         return NULL;
+//     }
+//     ss5_auth_ack_t *msg = (ss5_auth_ack_t *)_CALLOC(1, sizeof(ss5_auth_ack_t));
+//     msg->ver = *buf;
+//     msg->method = *(buf + 1);
+//     return msg;
+// }
 
 /* -------------------------------------------------------------------------- */
 /*                                   server                                   */
 /* -------------------------------------------------------------------------- */
+#define SS5_VER 0x05
+#define SS5_PHASE_AUTH 1
+#define SS5_PHASE_REQ 2
+#define SS5_PHASE_DATA 3
+#define SS5_PHASE_AUTH_NP 4
+// typedef enum { ss5_phase_auth = 1, ss5_phase_req, ss5_phase_data } ss5_phase;
+
+struct socks5_server_s {
+    tcp_server_t *tcp_serv;
+    on_socks5_accept_t on_accept;
+    on_socks5_recv_t on_recv;
+    on_socks5_close_t on_close;
+};
 
 typedef struct {
-    uv_write_t req;
-    uv_buf_t buf;
-} write_req_t;
+    // tcp_connection_t *tcp_conn;
+    int phase;
+    void *data;
+} socks5_connection_t;
 
-void free_write_req(uv_write_t *req) {
-    write_req_t *wr = (write_req_t *)req;
-    free(wr->buf.base);
-    free(wr);
-}
-
-static void alloc_buffer(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
-    buf->base = (char *)_CALLOC(1, suggested_size);
-    buf->len = suggested_size;
-}
-
-static void on_uv_close(uv_handle_t *handle) {
-    _LOG("on_uv_close");
-    socks5_connection_t *conn = (socks5_connection_t *)handle->data;
-    if (!conn) {
-        goto on_uv_close_end;
+static void ss5_auth(const u_char *buf, ssize_t size, tcp_connection_t *tcp_conn) {
+    if (*buf != SS5_VER || size < 3) {
+        goto ss5_auth_error;
     }
+    u_char nmethods = buf[1];
 
-    if (conn->socks5->on_close) {
-        conn->socks5->on_close(conn->socks5, conn->id);
-        free_conn(conn);
-    }
-
-on_uv_close_end:
-    _FREE_IF(handle);
-}
-
-void on_uv_write(uv_write_t *req, int status) {
-    _LOG("on_uv_write");
-    if (status) {
-        fprintf(stderr, "Write error %s\n", uv_strerror(status));
-    }
-    free_write_req(req);
-}
-
-static void on_uv_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
-    _LOG("on_uv_read");
-    if (nread > 0) {
-        socks5_connection_t *conn = (socks5_connection_t *)cli->data;
-        if (conn && conn->socks5->on_recv) {
-            // TODO: parse socks5 protocol
-            conn->socks5->on_recv(conn->socks5, conn->id, buf->base, nread);
+    socks5_connection_t *ss5_conn = (socks5_connection_t *)tcp_conn->data;
+    char ok[2] = {SS5_VER, 0x00};
+    for (u_char i = 0; i < nmethods; i++) {
+        if (buf[2] == 0x00) {
+            tcp_server_send(tcp_conn->tcp_serv, tcp_conn->id, ok, 2);
+            ss5_conn->phase = SS5_PHASE_REQ;
         }
-        _LOG("%s", buf->base);
-
-        // // echo
-        // write_req_t *req = (write_req_t *)malloc(sizeof(write_req_t));
-        // req->buf = uv_buf_init(buf->base, nread);
-        // uv_write((uv_write_t *)req, cli, &req->buf, 1, on_uv_write);
-
-        return;
-    }
-    if (nread < 0) {
-        if (nread != UV_EOF) fprintf(stderr, "socks5 read error %s\n", uv_err_name(nread));
-        uv_close((uv_handle_t *)cli, on_uv_close);
-    }
-
-    free(buf->base);
-}
-
-static void on_uv_accept(uv_stream_t *server, int status) {
-    _LOG("on_uv_accept");
-    IF_UV_ERROR(status, "new socks5 connection error", { return; });
-
-    uv_tcp_t *cli = (uv_tcp_t *)_CALLOC(1, sizeof(uv_tcp_t));
-    int r = uv_tcp_init(server->loop, cli);
-    IF_UV_ERROR(r, "new socks5 connection error", {
-        _FREE_IF(cli);
-        return;
-    });
-
-    socks5_server_t *socks5 = (socks5_server_t *)server->data;
-
-    r = uv_accept(server, (uv_stream_t *)cli);
-    IF_UV_ERROR(r, "new socks5 connection error", { uv_close((uv_handle_t *)cli, on_uv_close); });
-
-    socks5_connection_t *conn = init_conn(socks5, cli, NULL);
-    if (socks5->on_accept) {
-        socks5->on_accept(socks5, conn->id);
-    }
-    cli->data = conn;
-
-    uv_read_start((uv_stream_t *)cli, alloc_buffer, on_uv_read);
-}
-
-void on_uv_shutdown(uv_shutdown_t *req, int status) {
-    socks5_server_t *socks5 = (socks5_server_t *)req->data;
-    if (socks5->conns) {
-        socks5_connection_t *conn, *tmp;
-        HASH_ITER(hh, socks5->conns, conn, tmp) {
-            // free_conn(conn);
-            uv_close((uv_handle_t *)conn->client, on_uv_close);
+        if (buf[2] == 0x02) {
+            tcp_server_send(tcp_conn->tcp_serv, tcp_conn->id, ok, 2);
+            ss5_conn->phase = SS5_PHASE_AUTH_NP;
         }
     }
-    _FREE_IF(req);
-    _FREE_IF(socks5);
+    return;
+
+ss5_auth_error:
+    fprintf(stderr, "socks5 auth error\n");
+}
+
+static void ss5_auth_np(const u_char *buf, ssize_t size, tcp_connection_t *tcp_conn) {
+    if (*buf != SS5_VER || size < 5) {
+        goto ss5_auth_name_pwd_error;
+    }
+    char ok[2] = {SS5_VER, 0x00};
+    tcp_server_send(tcp_conn->tcp_serv, tcp_conn->id, ok, 2);
+    return;
+
+ss5_auth_name_pwd_error:
+    fprintf(stderr, "socks5 auth name password error\n");
+}
+
+static void ss5_req() {
+    // TODO:
+}
+
+static void on_tcp_close(tcp_server_t *tcp_serv, int conn_id) {
+    _LOG("on_tcp_close");
+    socks5_server_t *socks5 = (socks5_server_t *)tcp_serv->data;
+    socks5->on_close(socks5, conn_id);
+}
+
+static void on_tcp_recv(tcp_server_t *tcp_serv, int conn_id, const char *buf, ssize_t size) {
+    _LOG("on_tcp_recv");
+    tcp_connection_t *tcp_conn = get_tcp_server_conn(tcp_serv, conn_id);
+    if (!tcp_conn) {
+        fprintf(stderr, "tcp server connection does not exist %d\n", conn_id);
+        return;
+    }
+    socks5_server_t *socks5 = (socks5_server_t *)tcp_serv->data;
+    socks5_connection_t *ss5_conn = (socks5_connection_t *)tcp_conn->data;
+    switch (ss5_conn->phase) {
+        case SS5_PHASE_AUTH:
+            ss5_auth((const u_char *)buf, size, tcp_conn);
+            break;
+        case SS5_PHASE_AUTH_NP:
+            ss5_auth_np((const u_char *)buf, size, tcp_conn);
+            break;
+        case SS5_PHASE_REQ:
+            // TODO:
+            break;
+        case SS5_PHASE_DATA:
+            socks5->on_recv(socks5, conn_id, buf, size);
+            break;
+
+        default:
+            break;
+    }
+}
+
+static void on_tcp_accept(tcp_server_t *tcp_serv, int conn_id) {
+    _LOG("on_tcp_accept");
+    socks5_server_t *socks5 = (socks5_server_t *)tcp_serv->data;
+    tcp_connection_t *tcp_conn = get_tcp_server_conn(tcp_serv, conn_id);
+    if (!tcp_conn) {
+        fprintf(stderr, "tcp server connection does not exist %d\n", conn_id);
+        return;
+    }
+    socks5_connection_t *ss5_conn = (socks5_connection_t *)_CALLOC(1, sizeof(socks5_connection_t));
+    ss5_conn->phase = SS5_PHASE_AUTH;
+    tcp_conn->data = ss5_conn;
+    socks5->on_accept(socks5, conn_id);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -151,39 +261,19 @@ socks5_server_t *init_socks5_server(uv_loop_t *loop, const char *ip, uint16_t po
         return NULL;
     }
 
-    uv_tcp_t *tcp = _CALLOC(1, sizeof(uv_tcp_t));
-    _CHECK_OOM(tcp);
-    int r = uv_tcp_init(loop, tcp);
-    IF_UV_ERROR(r, "init socks5 server error", {
-        _FREE_IF(tcp);
+    tcp_server_t *tcp_serv = init_tcp_server(loop, ip, port, on_tcp_accept, on_tcp_recv, on_tcp_close);
+    if (!tcp_serv) {
         return NULL;
-    });
-    struct sockaddr_in sockaddr;
-    r = uv_ip4_addr(ip, port, &sockaddr);
-    IF_UV_ERROR(r, "init socks5 server error", {
-        _FREE_IF(tcp);
-        return NULL;
-    });
-
-    uv_tcp_bind(tcp, (const struct sockaddr *)&sockaddr, 0);
-    r = uv_listen((uv_stream_t *)tcp, DEF_BACKLOG, on_uv_accept);
-    IF_UV_ERROR(r, "init socks5 server error", {
-        _FREE_IF(tcp);
-        return NULL;
-    });
+    }
 
     socks5_server_t *socks5 = (socks5_server_t *)_CALLOC(1, sizeof(socks5_server_t));
     _CHECK_OOM(socks5);
-    socks5->conns = NULL;
-    socks5->ip = (char *)ip;
-    socks5->port = port;
-    socks5->loop = loop;
+    tcp_serv->data = socks5;
+    socks5->tcp_serv = tcp_serv;
     socks5->on_accept = on_accept;
     socks5->on_close = on_close;
     socks5->on_recv = on_recv;
-    socks5->tcp = tcp;
 
-    tcp->data = socks5;
     return socks5;
 }
 
@@ -192,31 +282,11 @@ void free_socks5_server(socks5_server_t *socks5) {
         return;
     }
 
-    int r = -1;
-    if (socks5->tcp) {
-        r = uv_read_stop((uv_stream_t *)socks5->tcp);
-        IF_UV_ERROR(r, "tcp server stop read error", {});
-        uv_shutdown_t *req = (uv_shutdown_t *)_CALLOC(1, sizeof(uv_shutdown));
-        req->data = socks5;
-        r = uv_shutdown(req, (uv_stream_t *)socks5->tcp, on_uv_shutdown);
-        IF_UV_ERROR(r, "tcp server shutdown error", {});
+    if (socks5->tcp_serv) {
+        free_tcp_server(socks5->tcp_serv);
     }
 
-    if (r <= 0) {
-        fprintf(stderr, "force shutdown tcp server\n");
-        if (socks5->conns) {
-            socks5_connection_t *conn, *tmp;
-            HASH_ITER(hh, socks5->conns, conn, tmp) { free_conn(conn); }
-        }
-        _FREE_IF(socks5);
-    }
-
-    // if (socks5->conns) {
-    //     socks5_connection_t *conn, *tmp;
-    //     HASH_ITER(hh, socks5->conns, conn, tmp) { free_conn(conn); }
-    // }
-
-    // TODO: safe uv_shutdown
+    free(socks5);
 }
 
 bool socks5_server_send(socks5_server_t *socks5, int conn_id, const char *buf, ssize_t size) {
@@ -224,28 +294,8 @@ bool socks5_server_send(socks5_server_t *socks5, int conn_id, const char *buf, s
         return false;
     }
 
-    socks5_connection_t *conn = get_conn(socks5, conn_id);
-    if (!conn) {
-        fprintf(stderr, "socks5 connection does not exsit\n");
-        return false;
-    }
-
-    write_req_t *req = (write_req_t *)malloc(sizeof(write_req_t));
-    req->buf = uv_buf_init((char *)buf, size);
-
-    int r = uv_write((uv_write_t *)req, (uv_stream_t *)conn->client, &req->buf, 1, on_uv_write);
-    IF_UV_ERROR(r, "socks5 server send error", {
-        _FREE_IF(req);
-        return false;
-    });
-    return true;
-}
-
-socks5_connection_t *socks5_server_get_conn(socks5_server_t *socks5, int conn_id) {
-    if (!socks5) {
-        return NULL;
-    }
-    return get_conn(socks5, conn_id);
+    // TODO: wrap buf
+    return tcp_server_send(socks5->tcp_serv, conn_id, buf, size);
 }
 
 /* -------------------------------------------------------------------------- */
