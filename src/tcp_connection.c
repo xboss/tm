@@ -10,7 +10,7 @@ typedef struct {
 typedef struct {
     uv_connect_t req;
     void *data;
-    on_tcp_accept_t on_accept;
+    // on_tcp_accept_t on_accept;
     on_tcp_connect_t on_connect;
     on_tcp_recv_t on_recv;
     on_tcp_close_t on_close;
@@ -85,7 +85,7 @@ static void on_uv_connect(uv_connect_t *req, int status) {
     connect_req_t *connect_req = (connect_req_t *)req;
 
     uv_tcp_t *cli = (uv_tcp_t *)req->handle;
-    tcp_connection_t *conn = init_tcp_connection(cli->accepted_fd, cli, NULL, connect_req->data, connect_req->on_accept,
+    tcp_connection_t *conn = init_tcp_connection(cli->accepted_fd, cli, NULL, connect_req->data,
                                                  connect_req->on_connect, connect_req->on_recv, connect_req->on_close);
     if (!conn) {
         _FREE_IF(req);
@@ -104,7 +104,7 @@ static void on_uv_connect(uv_connect_t *req, int status) {
 /*                                   public                                   */
 /* -------------------------------------------------------------------------- */
 
-tcp_connection_t *init_tcp_connection(int id, uv_tcp_t *cli, tcp_server_t *serv, void *data, on_tcp_accept_t on_accept,
+tcp_connection_t *init_tcp_connection(int id, uv_tcp_t *cli, tcp_server_t *serv, void *data,
                                       on_tcp_connect_t on_connect, on_tcp_recv_t on_recv, on_tcp_close_t on_close) {
     if (!cli) {
         return NULL;
@@ -118,7 +118,7 @@ tcp_connection_t *init_tcp_connection(int id, uv_tcp_t *cli, tcp_server_t *serv,
     conn->serv = serv;
     conn->cli = cli;
     conn->data = data;
-    conn->on_accept = on_accept;
+    // conn->on_accept = on_accept;
     conn->on_connect = on_connect;
     conn->on_recv = on_recv;
     conn->on_close = on_close;
@@ -165,8 +165,8 @@ void close_tcp_connection(tcp_connection_t *conn) {
     uv_close((uv_handle_t *)conn->cli, on_uv_close);
 }
 
-bool tcp_connect(uv_loop_t *loop, const char *ip, uint16_t port, void *data, on_tcp_accept_t on_accept,
-                 on_tcp_connect_t on_connect, on_tcp_recv_t on_recv, on_tcp_close_t on_close) {
+bool tcp_connect(uv_loop_t *loop, const char *ip, uint16_t port, void *data, on_tcp_connect_t on_connect,
+                 on_tcp_recv_t on_recv, on_tcp_close_t on_close) {
     if (!loop || !ip || port <= 0) {
         return false;
     }
@@ -185,11 +185,11 @@ bool tcp_connect(uv_loop_t *loop, const char *ip, uint16_t port, void *data, on_
 
     connect_req_t *connect_req = (connect_req_t *)_CALLOC(1, sizeof(connect_req_t));
     connect_req->data = data;
-    connect_req->on_accept = on_accept;
+    // connect_req->on_accept = NULL;
     connect_req->on_close = on_close;
     connect_req->on_connect = on_connect;
     connect_req->on_recv = on_recv;
-    cli->data = connect_req;
+    // cli->data = connect_req;
     r = uv_tcp_connect((uv_connect_t *)connect_req, cli, (const struct sockaddr *)&addr, on_uv_connect);
     IF_UV_ERROR(r, "tcp connect error", {
         _FREE_IF(connect_req);
@@ -208,28 +208,28 @@ bool tcp_connect(uv_loop_t *loop, const char *ip, uint16_t port, void *data, on_
 //     // TODO:
 // }
 
-void on_tcp_connect(tcp_connection_t *conn) {
-    _LOG("connect ok");
-    // TODO:
-}
+// void on_tcp_connect(tcp_connection_t *conn) {
+//     _LOG("connect ok");
+//     // TODO:
+// }
 
-void on_tcp_recv(tcp_connection_t *conn, const char *buf, ssize_t size) {
-    // _LOG("recv:%s", buf);
-    bool rt = tcp_send(conn, buf, size);
-    assert(rt);
-    // TODO:
-}
+// void on_tcp_recv(tcp_connection_t *conn, const char *buf, ssize_t size) {
+//     // _LOG("recv:%s", buf);
+//     bool rt = tcp_send(conn, buf, size);
+//     assert(rt);
+//     // TODO:
+// }
 
-void on_tcp_close(tcp_connection_t *conn) {
-    _LOG("close %d", conn->id);
-    // TODO:
-}
+// void on_tcp_close(tcp_connection_t *conn) {
+//     _LOG("close %d", conn->id);
+//     // TODO:
+// }
 
-int main(int argc, char const *argv[]) {
-    uv_loop_t *loop = uv_default_loop();
-    bool rt = tcp_connect(loop, "127.0.0.1", 6666, NULL, NULL, on_tcp_connect, on_tcp_recv, on_tcp_close);
-    assert(rt);
-    int r = uv_run(loop, UV_RUN_DEFAULT);
-    _LOG("exit %d", r);
-    return r;
-}
+// int main(int argc, char const *argv[]) {
+//     uv_loop_t *loop = uv_default_loop();
+//     bool rt = tcp_connect(loop, "127.0.0.1", 6666, NULL, on_tcp_connect, on_tcp_recv, on_tcp_close);
+//     assert(rt);
+//     int r = uv_run(loop, UV_RUN_DEFAULT);
+//     _LOG("exit %d", r);
+//     return r;
+// }

@@ -26,5 +26,7 @@ clean:
 
 # $(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_server.c -o $(OUTPUT_DIR)tcp_server 
 # $(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_server.c ./src/socks5_server.c -o $(OUTPUT_DIR)socks5_server 
+# $(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_connection.c -o $(OUTPUT_DIR)tcp_connection 
 test:
-	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_connection.c -o $(OUTPUT_DIR)tcp_connection 
+	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_connection.c ./src/tcp_server.c ./test/test_server.c -o $(OUTPUT_DIR)test_server 
+	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_connection.c ./test/test_client.c -o $(OUTPUT_DIR)test_client 

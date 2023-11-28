@@ -1,5 +1,7 @@
 #include "tcp_server.h"
 
+#include <stdbool.h>
+
 #include "utils.h"
 
 // #define DEF_SOCKS5_IP 127.0.0.1
@@ -9,135 +11,86 @@
 /* -------------------------------------------------------------------------- */
 /*                        tcp server connection manager                       */
 /* -------------------------------------------------------------------------- */
-static tcp_connection_t *get_conn(tcp_server_t *tcp_serv, int id) {
-    tcp_connection_t *conn = NULL;
-    HASH_FIND_INT(tcp_serv->conns, &id, conn);
-    return conn;
+static bool is_conn_exsit(tcp_server_t *serv, tcp_connection_t *conn) {
+    if (!conn || !serv || !serv->conns) {
+        return false;
+    }
+    tcp_connection_t *c = NULL;
+    HASH_FIND_INT(serv->conns, &conn->id, c);
+    return c ? true : false;
 }
 
-static tcp_connection_t *init_conn(tcp_server_t *tcp_serv, uv_tcp_t *cli, void *data) {
-    tcp_connection_t *conn = (tcp_connection_t *)_CALLOC(1, sizeof(tcp_connection_t));
-    conn->tcp_serv = tcp_serv;
-    conn->id = cli->accepted_fd;
-    conn->data = data;
-    HASH_ADD_INT(tcp_serv->conns, id, conn);
-    return conn;
+static bool add_conn(tcp_server_t *serv, tcp_connection_t *conn) {
+    if (!conn || !serv || !serv->conns) {
+        return false;
+    }
+    HASH_ADD_INT(serv->conns, id, conn);
+    return true;
 }
 
-static void free_conn(tcp_connection_t *conn) {
-    if (!conn) {
-        return;
+static bool del_conn(tcp_server_t *serv, tcp_connection_t *conn) {
+    if (!conn || !serv || !serv->conns) {
+        return false;
     }
-    if (conn->tcp_serv && conn->tcp_serv->conns) {
-        HASH_DEL(conn->tcp_serv->conns, conn);
-    }
-    _FREE_IF(conn);
+    HASH_DEL(serv->conns, conn);
+    return true;
 }
 
 /* -------------------------------------------------------------------------- */
 /*                                   server                                   */
 /* -------------------------------------------------------------------------- */
 
-typedef struct {
-    uv_write_t req;
-    uv_buf_t buf;
-} write_req_t;
+static void on_tcp_recv(tcp_connection_t *conn, const char *buf, ssize_t size) {
+    // _LOG("recv:%s", buf);
+    if (conn->serv->on_recv) {
+        conn->serv->on_recv(conn, buf, size);
+    }
+    // bool rt = tcp_send(conn, buf, size);
+    // assert(rt);
 
-void free_write_req(uv_write_t *req) {
-    write_req_t *wr = (write_req_t *)req;
-    free(wr->buf.base);
-    free(wr);
+    // TODO:
 }
 
-static void alloc_buffer(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
-    buf->base = (char *)_CALLOC(1, suggested_size);
-    buf->len = suggested_size;
-}
-
-static void on_uv_close(uv_handle_t *handle) {
-    _LOG("on_uv_close");
-    tcp_connection_t *conn = (tcp_connection_t *)handle->data;
-    if (!conn) {
-        goto on_uv_close_end;
+static void on_tcp_close(tcp_connection_t *conn) {
+    _LOG("server close %d", conn->id);
+    del_conn(conn->serv, conn);
+    if (conn->serv->on_close) {
+        conn->serv->on_close(conn);
     }
 
-    if (conn->tcp_serv->on_close) {
-        conn->tcp_serv->on_close(conn->tcp_serv, conn->id);
-        free_conn(conn);
-    }
-
-on_uv_close_end:
-    _FREE_IF(handle);
-}
-
-void on_uv_write(uv_write_t *req, int status) {
-    _LOG("on_uv_write");
-    if (status) {
-        fprintf(stderr, "Write error %s\n", uv_strerror(status));
-    }
-    free_write_req(req);
-}
-
-static void on_uv_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
-    _LOG("on_uv_read");
-    if (nread > 0) {
-        tcp_connection_t *conn = (tcp_connection_t *)cli->data;
-        if (conn && conn->tcp_serv->on_recv) {
-            conn->tcp_serv->on_recv(conn->tcp_serv, conn->id, buf->base, nread);
-        }
-        _LOG("%s", buf->base);
-
-        // // echo
-        // write_req_t *req = (write_req_t *)malloc(sizeof(write_req_t));
-        // req->buf = uv_buf_init(buf->base, nread);
-        // uv_write((uv_write_t *)req, cli, &req->buf, 1, on_uv_write);
-
-        return;
-    }
-    if (nread < 0) {
-        if (nread != UV_EOF) fprintf(stderr, "tcp server read error %s\n", uv_err_name(nread));
-        uv_close((uv_handle_t *)cli, on_uv_close);
-    }
-
-    free(buf->base);
+    // TODO:
 }
 
 static void on_uv_accept(uv_stream_t *server, int status) {
     _LOG("on_uv_accept");
     IF_UV_ERROR(status, "new tcp server connection error", { return; });
-
     uv_tcp_t *cli = (uv_tcp_t *)_CALLOC(1, sizeof(uv_tcp_t));
+    _CHECK_OOM(cli);
     int r = uv_tcp_init(server->loop, cli);
     IF_UV_ERROR(r, "new tcp server connection error", {
         _FREE_IF(cli);
         return;
     });
-
-    tcp_server_t *tcp_serv = (tcp_server_t *)server->data;
-
+    tcp_server_t *serv = (tcp_server_t *)server->data;
     r = uv_accept(server, (uv_stream_t *)cli);
-    IF_UV_ERROR(r, "new tcp server connection error", { uv_close((uv_handle_t *)cli, on_uv_close); });
-
-    tcp_connection_t *conn = init_conn(tcp_serv, cli, NULL);
-    if (tcp_serv->on_accept) {
-        tcp_serv->on_accept(tcp_serv, conn->id);
+    IF_UV_ERROR(r, "new tcp server connection error", { _FREE_IF(cli); });
+    tcp_connection_t *conn = init_tcp_connection(serv->cid++, cli, serv, serv->data, NULL, on_tcp_recv, on_tcp_close);
+    if (conn) {
+        add_conn(serv, conn);
     }
-    cli->data = conn;
-
-    uv_read_start((uv_stream_t *)cli, alloc_buffer, on_uv_read);
+    if (serv->on_accept) {
+        serv->on_accept(conn);
+    }
 }
 
-void on_uv_shutdown(uv_shutdown_t *req, int status) {
-    tcp_server_t *tcp_serv = (tcp_server_t *)req->data;
-    if (tcp_serv->conns) {
+static void on_uv_shutdown(uv_shutdown_t *req, int status) {
+    tcp_server_t *serv = (tcp_server_t *)req->data;
+    if (serv->conns) {
         tcp_connection_t *conn, *tmp;
-        HASH_ITER(hh, tcp_serv->conns, conn, tmp) {
-            // free_conn(conn);
-            uv_close((uv_handle_t *)conn->client, on_uv_close);
-        }
+        HASH_ITER(hh, serv->conns, conn, tmp) { close_tcp_connection(conn); }
     }
     _FREE_IF(req);
-    _FREE_IF(tcp_serv);
+    _FREE_IF(serv);
 }
 
 /* -------------------------------------------------------------------------- */
@@ -150,7 +103,7 @@ tcp_server_t *init_tcp_server(uv_loop_t *loop, const char *ip, uint16_t port, on
         return NULL;
     }
 
-    uv_tcp_t *tcp = _CALLOC(1, sizeof(uv_tcp_t));
+    uv_tcp_t *tcp = (uv_tcp_t *)_CALLOC(1, sizeof(uv_tcp_t));
     _CHECK_OOM(tcp);
     int r = uv_tcp_init(loop, tcp);
     IF_UV_ERROR(r, "init tcp server error", {
@@ -171,19 +124,20 @@ tcp_server_t *init_tcp_server(uv_loop_t *loop, const char *ip, uint16_t port, on
         return NULL;
     });
 
-    tcp_server_t *tcp_serv = (tcp_server_t *)_CALLOC(1, sizeof(tcp_server_t));
-    _CHECK_OOM(tcp_serv);
-    tcp_serv->conns = NULL;
-    tcp_serv->ip = (char *)ip;
-    tcp_serv->port = port;
-    tcp_serv->loop = loop;
-    tcp_serv->on_accept = on_accept;
-    tcp_serv->on_close = on_close;
-    tcp_serv->on_recv = on_recv;
-    tcp_serv->tcp = tcp;
+    tcp_server_t *serv = (tcp_server_t *)_CALLOC(1, sizeof(tcp_server_t));
+    _CHECK_OOM(serv);
+    serv->cid = 1;
+    serv->conns = NULL;
+    serv->ip = (char *)ip;
+    serv->port = port;
+    serv->loop = loop;
+    serv->on_accept = on_accept;
+    serv->on_close = on_close;
+    serv->on_recv = on_recv;
+    serv->tcp = tcp;
 
-    tcp->data = tcp_serv;
-    return tcp_serv;
+    tcp->data = serv;
+    return serv;
 }
 
 void free_tcp_server(tcp_server_t *tcp_serv) {
@@ -199,58 +153,21 @@ void free_tcp_server(tcp_server_t *tcp_serv) {
         req->data = tcp_serv;
         r = uv_shutdown(req, (uv_stream_t *)tcp_serv->tcp, on_uv_shutdown);
         IF_UV_ERROR(r, "tcp server shutdown error", {});
-    }
-
-    if (r <= 0) {
-        fprintf(stderr, "force shutdown tcp server\n");
-        if (tcp_serv->conns) {
-            tcp_connection_t *conn, *tmp;
-            HASH_ITER(hh, tcp_serv->conns, conn, tmp) { free_conn(conn); }
-        }
+    } else {
         _FREE_IF(tcp_serv);
     }
 
-    // if (tcp_serv->conns) {
-    //     tcp_connection_t *conn, *tmp;
-    //     HASH_ITER(hh, tcp_serv->conns, conn, tmp) { free_conn(conn); }
-    // }
-
-    // TODO: safe uv_shutdown
-}
-
-bool tcp_server_send(tcp_server_t *tcp_serv, int conn_id, const char *buf, ssize_t size) {
-    if (!tcp_serv || !buf || size <= 0) {
-        return false;
-    }
-
-    tcp_connection_t *conn = get_conn(tcp_serv, conn_id);
-    if (!conn) {
-        fprintf(stderr, "tcp server connection does not exist when send %d\n", conn_id);
-        return false;
-    }
-
-    write_req_t *req = (write_req_t *)malloc(sizeof(write_req_t));
-    req->buf = uv_buf_init((char *)buf, size);
-
-    int r = uv_write((uv_write_t *)req, (uv_stream_t *)conn->client, &req->buf, 1, on_uv_write);
-    IF_UV_ERROR(r, "tcp server server send error", {
-        _FREE_IF(req);
-        return false;
-    });
-    return true;
-}
-
-tcp_connection_t *get_tcp_server_conn(tcp_server_t *tcp_serv, int conn_id) {
-    if (!tcp_serv) {
-        return NULL;
-    }
-    return get_conn(tcp_serv, conn_id);
-}
-
-void close_tcp_server_conn(tcp_server_t *tcp_serv, int conn_id) {
-    tcp_connection_t *conn = get_conn(tcp_serv, conn_id);
-    if (conn) {
-        uv_close((uv_handle_t *)conn->client, on_uv_close);
+    if (r < 0 && tcp_serv) {
+        // TODO:  force shutdown
+        fprintf(stderr, "force shutdown tcp server\n");
+        if (tcp_serv->conns) {
+            tcp_connection_t *conn, *tmp;
+            HASH_ITER(hh, tcp_serv->conns, conn, tmp) {
+                close_tcp_connection(conn);
+                // free_conn(conn);
+            }
+        }
+        _FREE_IF(tcp_serv);
     }
 }
 
