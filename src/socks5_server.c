@@ -245,20 +245,24 @@ static void on_client_connect(tcp_connection_t *conn) {
     u_char *ack_raw = (u_char *)_CALLOC(1, ss5_conn->raw_len);
     memcpy(ack_raw, ss5_conn->raw, ss5_conn->raw_len);
     ack_raw[1] = SS5_REP_OK;
-    tcp_send(ss5_conn->fr_conn, ack_raw, ss5_conn->raw_len);
+    bool rt = tcp_send(ss5_conn->fr_conn, ack_raw, ss5_conn->raw_len);
+    assert(rt);
     _FREE_IF(ack_raw);
 }
 
 static void on_client_recv(tcp_connection_t *conn, const char *buf, ssize_t size) {
     // _LOG("recv:%s", buf);
-    bool rt = tcp_send(conn, buf, size);
+    socks5_connection_t *ss5_conn = (socks5_connection_t *)conn->data;
+    bool rt = tcp_send(ss5_conn->fr_conn, buf, size);
     assert(rt);
     // TODO:
 }
 
 static void on_client_close(tcp_connection_t *conn) {
     _LOG("close %d", conn->id);
-    // TODO:
+    socks5_connection_t *ss5_conn = (socks5_connection_t *)conn->data;
+    // TODO: close fr_conn
+    free_ss5_conn(ss5_conn);
 }
 
 static void ss5_req(const u_char *buf, ssize_t size, socks5_connection_t *ss5_conn) {
@@ -324,13 +328,16 @@ ss5_auth_req_error:
 static void on_server_close(tcp_connection_t *conn) {
     _LOG("on_tcp_close");
     socks5_server_t *socks5 = (socks5_server_t *)conn->serv->data;
-    // socks5->on_close((socks5_connection_t *)conn->data);
+    socks5_connection_t *ss5_conn = (socks5_connection_t *)conn->data;
+    // TODO: close bk_conn
+    free_ss5_conn(ss5_conn);
 }
 
 static void on_server_recv(tcp_connection_t *conn, const char *buf, ssize_t size) {
     _LOG("on_tcp_recv");
     socks5_server_t *socks5 = (socks5_server_t *)conn->serv->data;
     socks5_connection_t *ss5_conn = (socks5_connection_t *)conn->data;
+    bool rt = false;
     switch (ss5_conn->phase) {
         case SS5_PHASE_AUTH:
             ss5_auth((const u_char *)buf, size, conn);
@@ -342,8 +349,8 @@ static void on_server_recv(tcp_connection_t *conn, const char *buf, ssize_t size
             ss5_req((const u_char *)buf, size, ss5_conn);
             break;
         case SS5_PHASE_DATA:
-            // socks5->on_recv(conn, buf, size);
-            // TODO:
+            rt = tcp_send(ss5_conn->bk_conn, buf, size);
+            assert(rt);
             break;
         default:
             break;
