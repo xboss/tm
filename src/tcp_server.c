@@ -97,7 +97,7 @@ static void on_uv_shutdown(uv_shutdown_t *req, int status) {
 /*                                   public                                   */
 /* -------------------------------------------------------------------------- */
 
-tcp_server_t *init_tcp_server(uv_loop_t *loop, const char *ip, uint16_t port, on_tcp_accept_t on_accept,
+tcp_server_t *init_tcp_server(uv_loop_t *loop, const char *ip, uint16_t port, void *data, on_tcp_accept_t on_accept,
                               on_tcp_recv_t on_recv, on_tcp_close_t on_close) {
     if (!loop || !ip || port <= 0) {
         return NULL;
@@ -135,6 +135,7 @@ tcp_server_t *init_tcp_server(uv_loop_t *loop, const char *ip, uint16_t port, on
     serv->on_close = on_close;
     serv->on_recv = on_recv;
     serv->tcp = tcp;
+    serv->data = data;
 
     tcp->data = serv;
     return serv;
@@ -154,6 +155,7 @@ void free_tcp_server(tcp_server_t *tcp_serv) {
         r = uv_shutdown(req, (uv_stream_t *)tcp_serv->tcp, on_uv_shutdown);
         IF_UV_ERROR(r, "tcp server shutdown error", {});
     } else {
+        // TODO: release conns
         _FREE_IF(tcp_serv);
     }
 

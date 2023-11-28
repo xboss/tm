@@ -22,7 +22,7 @@ struct tcp_server_s {
     on_tcp_close_t on_close;
 };
 
-tcp_server_t *init_tcp_server(uv_loop_t *loop, const char *ip, uint16_t port, on_tcp_accept_t on_accept,
+tcp_server_t *init_tcp_server(uv_loop_t *loop, const char *ip, uint16_t port, void *data, on_tcp_accept_t on_accept,
                               on_tcp_recv_t on_recv, on_tcp_close_t on_close);
 void free_tcp_server(tcp_server_t *tcp_serv);
 
