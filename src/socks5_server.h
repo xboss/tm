@@ -1,7 +1,8 @@
 #ifndef _SOCKS5_SERVER_H
 #define _SOCKS5_SERVER_H
 
-#include "tcp_server.h"
+#include <stdbool.h>
+#include <uv.h>
 
 typedef struct socks5_server_s socks5_server_t;
 // typedef struct socks5_connection_s socks5_connection_t;

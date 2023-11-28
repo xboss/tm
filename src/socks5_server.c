@@ -1,5 +1,6 @@
 #include "socks5_server.h"
 
+#include "tcp_server.h"
 #include "utils.h"
 
 /* -------------------------------------------------------------------------- */
@@ -143,7 +144,15 @@
 /* -------------------------------------------------------------------------- */
 /*                                   server                                   */
 /* -------------------------------------------------------------------------- */
-#define SS5_VER 0x05
+#define SS5_VER 0x05U
+#define SS5_CMD_CONNECT 0x01U
+#define SS5_CMD_BIND 0x02U
+#define SS5_CMD_UDP_ASSOCIATE 0x03U
+
+#define SS5_ATYP_IPV4 0x01U
+#define SS5_ATYP_DOMAIN 0x03U
+#define SS5_ATYP_IPV6 0x04U
+
 #define SS5_PHASE_AUTH 1
 #define SS5_PHASE_REQ 2
 #define SS5_PHASE_DATA 3
@@ -160,6 +169,7 @@ struct socks5_server_s {
 typedef struct {
     // tcp_connection_t *tcp_conn;
     int phase;
+    tcp_connection_t *dst_conn;
     void *data;
 } socks5_connection_t;
 
@@ -199,8 +209,42 @@ ss5_auth_name_pwd_error:
     fprintf(stderr, "socks5 auth name password error\n");
 }
 
-static void ss5_req() {
-    // TODO:
+static void ss5_req(const u_char *buf, ssize_t size, tcp_connection_t *tcp_conn) {
+    if (*buf != SS5_VER || size < 7) {
+        goto ss5_auth_req_error;
+    }
+
+    u_char cmd = buf[1];
+    if (cmd == SS5_CMD_BIND || cmd == SS5_CMD_UDP_ASSOCIATE) {
+        // TODO: support bind and udp associate
+        _LOG("now only 'connect' command is supported.");
+        return;
+    }
+    if (cmd != SS5_CMD_CONNECT) {
+        goto ss5_auth_req_error;
+    }
+
+    u_char atyp = buf[3];
+    // u_char dst_addr[128] = {0};
+    if (atyp == SS5_ATYP_IPV4) {
+        u_char dst_addr[4] = {0};
+        uint16_t port = ntohs((uint16_t)buf[7]);
+        // TODO: connect to dest
+    } else if (atyp == SS5_ATYP_IPV6) {
+        u_char dst_addr[16] = {0};
+        uint16_t port = ntohs((uint16_t)buf[19]);
+        // TODO: connect to dest
+    } else if (atyp == SS5_ATYP_DOMAIN) {
+        // TODO: resolve DNS
+        // TODO: connect to dest
+    } else {
+        goto ss5_auth_req_error;
+    }
+
+    return;
+
+ss5_auth_req_error:
+    fprintf(stderr, "socks5 request error\n");
 }
 
 static void on_tcp_close(tcp_server_t *tcp_serv, int conn_id) {
@@ -226,7 +270,7 @@ static void on_tcp_recv(tcp_server_t *tcp_serv, int conn_id, const char *buf, ss
             ss5_auth_np((const u_char *)buf, size, tcp_conn);
             break;
         case SS5_PHASE_REQ:
-            // TODO:
+            ss5_req((const u_char *)buf, size, tcp_conn);
             break;
         case SS5_PHASE_DATA:
             socks5->on_recv(socks5, conn_id, buf, size);
