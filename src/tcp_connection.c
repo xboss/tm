@@ -20,6 +20,7 @@ static void free_write_req(uv_write_t *req) {
     write_req_t *wr = (write_req_t *)req;
     _FREE_IF(wr->buf.base);
     _FREE_IF(wr);
+    _LOG("free_write_req");
 }
 
 static void alloc_buffer(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
@@ -63,7 +64,7 @@ static void on_uv_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
         if (conn && conn->on_recv) {
             conn->on_recv(conn, buf->base, nread);
         }
-        return;
+        // return;
     }
     if (nread < 0) {
         if (nread != UV_EOF) fprintf(stderr, "tcp read error %s\n", uv_err_name(nread));
@@ -71,6 +72,7 @@ static void on_uv_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
     }
 
     free(buf->base);
+    _LOG("free buf base");
 }
 
 static void on_uv_connect(uv_connect_t *req, int status) {
@@ -140,16 +142,20 @@ tcp_connection_t *init_tcp_connection(int id, uv_tcp_t *cli, tcp_server_t *serv,
 // }
 
 bool tcp_send(tcp_connection_t *conn, const char *buf, ssize_t size) {
+    _LOG("tcp send %zd", size);
     if (!conn || !buf || size <= 0) {
         return false;
     }
 
     write_req_t *req = (write_req_t *)malloc(sizeof(write_req_t));
-    req->buf = uv_buf_init((char *)buf, size);
+    char *wbuf = (char *)_CALLOC(1, size);
+    memcpy(wbuf, buf, size);
+    req->buf = uv_buf_init((char *)wbuf, size);
+    // req->buf = uv_buf_init((char *)buf, size);
 
     int r = uv_write((uv_write_t *)req, (uv_stream_t *)conn->cli, &req->buf, 1, on_uv_write);
     IF_UV_ERROR(r, "tcp send error", {
-        _FREE_IF(req);
+        free_write_req((uv_write_t *)req);
         return false;
     });
     return true;
