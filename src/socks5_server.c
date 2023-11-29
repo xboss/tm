@@ -3,144 +3,6 @@
 #include "utils.h"
 
 /* -------------------------------------------------------------------------- */
-/*                               socks5 protocol                              */
-/* -------------------------------------------------------------------------- */
-
-// #define SS5_VER 0x05
-// #define SS5_MSG_AUTH 1
-// #define SS5_MSG_AUTH_ACK 2
-// #define SS5_MSG_AUTH_SUB 3
-// #define SS5_MSG_AUTH_SUB_ACK 4
-// #define SS5_MSG_AUTH_REQ 5
-// #define SS5_MSG_AUTH_REQ_ACK 6
-
-// // +----+----------+----------+
-// // |VER | NMETHODS | METHODS  |
-// // +----+----------+----------+
-// // | 1  |    1     | 1 to 255 |
-// // +----+----------+----------+
-// typedef struct {
-//     u_char ver;
-//     u_char nmethods;
-//     u_char method[255];
-// } ss5_auth_t;
-
-// // +----+--------+
-// // |VER | METHOD |
-// // +----+--------+
-// // | 1  |   1    |
-// // +----+--------+
-// typedef struct {
-//     u_char ver;
-//     u_char method;
-// } ss5_auth_ack_t;
-
-// // +----+------+----------+------+----------+
-// // |VER | ULEN |  UNAME   | PLEN |  PASSWD  |
-// // +----+------+----------+------+----------+
-// // | 1  |  1   | 1 to 255 |  1   | 1 to 255 |
-// // +----+------+----------+------+----------+
-// typedef struct {
-//     u_char ver;
-//     u_char ulen;
-//     u_char plen;
-//     u_char uname[255];
-//     u_char passwd[255];
-// } ss5_auth_sub_t;
-
-// // +----+-----+-------+------+----------+----------+
-// // |VER | CMD |  RSV  | ATYP | DST.ADDR | DST.PORT |
-// // +----+-----+-------+------+----------+----------+
-// // | 1  |  1  | X'00' |  1   | Variable |    2     |
-// // +----+-----+-------+------+----------+----------+
-// typedef struct {
-//     u_char ver;
-//     u_char cmd;
-//     u_char rsv;
-//     u_char atyp;
-//     u_char *dst_addr;
-//     uint16_t dst_port;
-// } ss5_req_t;
-
-// // +----+-----+-------+------+----------+----------+
-// // |VER | REP |  RSV  | ATYP | BND.ADDR | BND.PORT |
-// // +----+-----+-------+------+----------+----------+
-// // | 1  |  1  | X'00' |  1   | Variable |    2     |
-// // +----+-----+-------+------+----------+----------+
-// typedef struct {
-//     u_char ver;
-//     u_char rep;
-//     u_char rsv;
-//     u_char atyp;
-//     u_char *bnd_addr;
-//     uint16_t bnd_port;
-// } ss5_req_ack_t;
-
-// // typedef struct {
-// //     int type;
-// //     u_char ver;
-// //     u_char nmethods;
-// //     u_char methods[255];
-// //     u_char method;
-// //     u_char ulen;
-// //     u_char plen;
-// //     u_char uname[255];
-// //     u_char passwd[255];
-
-// //     u_char rep;
-// //     u_char rsv;
-// //     u_char atyp;
-// //     u_char addr;
-// //     uint16_t port;
-// // } ss5_msg_t;
-
-// static u_char *pack_ss5_auth(const ss5_auth_t *msg, int *len) {
-//     if (!msg || !len) {
-//         return NULL;
-//     }
-//     *len = msg->nmethods + 2;
-//     u_char *raw = (u_char *)_CALLOC(1, *len);
-//     _CHECK_OOM(raw);
-//     raw[0] = SS5_VER;
-//     raw[1] = msg->nmethods;
-//     memcpy(raw + 2, msg->method, msg->nmethods);
-//     return raw;
-// }
-
-// static ss5_auth_t *unpack_ss5_auth(const u_char *buf, int len) {
-//     if (!buf || len <= 2) {
-//         return NULL;
-//     }
-//     ss5_auth_t *msg = (ss5_auth_t *)_CALLOC(1, sizeof(ss5_auth_t));
-//     msg->ver = *buf;
-//     msg->nmethods = *(buf + 1);
-//     memcpy(msg->method, buf + 2, msg->nmethods);
-//     return msg;
-// }
-
-// static u_char *pack_ss5_auth_ack(const ss5_auth_ack_t *msg, int *len) {
-//     if (!msg || !len) {
-//         return NULL;
-//     }
-//     *len = 2;
-//     u_char *raw = (u_char *)_CALLOC(1, 2);
-//     _CHECK_OOM(raw);
-//     raw[0] = SS5_VER;
-//     raw[1] = msg->method;
-//     return raw;
-// }
-
-// static ss5_auth_ack_t *unpack_ss5_auth_ack(const u_char *buf, int len) {
-//     if (!buf || len <= 2) {
-//         return NULL;
-//     }
-//     ss5_auth_ack_t *msg = (ss5_auth_ack_t *)_CALLOC(1, sizeof(ss5_auth_ack_t));
-//     msg->ver = *buf;
-//     msg->method = *(buf + 1);
-//     return msg;
-// }
-
-/* -------------------------------------------------------------------------- */
 /*                                   server                                   */
 /* -------------------------------------------------------------------------- */
 #define SS5_VER 0x05U
@@ -166,6 +28,7 @@ REP: 回复请求的状态
  */
 #define SS5_REP_OK 0x00U
 #define SS5_REP_ERR 0x01U
+#define SS5_REP_HOST_ERR 0x04U
 
 #define SS5_PHASE_AUTH 1
 #define SS5_PHASE_REQ 2
@@ -180,9 +43,15 @@ struct socks5_server_s {
     // on_socks5_close_t on_close;
 };
 
+bool resolve_domain(uv_loop_t *loop, socks5_connection_t *ss5_conn, char *domain, int family);
+
 static void free_ss5_conn(socks5_connection_t *conn) {
     if (!conn) {
         return;
+    }
+    conn->phase = -9999;  // TODO: test
+    if (conn->resolver) {
+        conn->resolver->data = NULL;
     }
     if (conn->raw) {
         _FREE_IF(conn->raw);
@@ -242,17 +111,32 @@ ss5_auth_name_pwd_error:
 //     // tcp_send(ss5_conn->tcp_conn, err, sizeof(err));
 // }
 
+static bool ss5_req_ack(socks5_connection_t *ss5_conn, u_char type) {
+    u_char *ack_raw = (u_char *)_CALLOC(1, ss5_conn->raw_len);
+    _CHECK_OOM(ack_raw);
+    memcpy(ack_raw, ss5_conn->raw, ss5_conn->raw_len);
+    ack_raw[1] = type;
+    bool rt = tcp_send(ss5_conn->fr_conn, (const char *)ack_raw, ss5_conn->raw_len);
+    _FREE_IF(ack_raw);
+    return rt;
+}
+
 static void on_back_connect(tcp_connection_t *conn) {
     _LOG("back connect ok");
     socks5_connection_t *ss5_conn = (socks5_connection_t *)conn->data;
     assert(ss5_conn);
     ss5_conn->bk_conn = conn;
-    u_char *ack_raw = (u_char *)_CALLOC(1, ss5_conn->raw_len);
-    memcpy(ack_raw, ss5_conn->raw, ss5_conn->raw_len);
-    ack_raw[1] = SS5_REP_OK;
-    bool rt = tcp_send(ss5_conn->fr_conn, (const char *)ack_raw, ss5_conn->raw_len);
-    _FREE_IF(ack_raw);
-    assert(rt);
+
+    // u_char *ack_raw = (u_char *)_CALLOC(1, ss5_conn->raw_len);
+    // memcpy(ack_raw, ss5_conn->raw, ss5_conn->raw_len);
+    // ack_raw[1] = SS5_REP_OK;
+    // bool rt = tcp_send(ss5_conn->fr_conn, (const char *)ack_raw, ss5_conn->raw_len);
+    // _FREE_IF(ack_raw);
+    // assert(rt);
+
+    if (ss5_req_ack(ss5_conn, SS5_REP_OK)) {
+        ss5_conn->phase = SS5_PHASE_DATA;
+    }
 }
 
 static void on_back_recv(tcp_connection_t *conn, const char *buf, ssize_t size) {
@@ -298,7 +182,7 @@ static void ss5_req(const u_char *buf, ssize_t size, socks5_connection_t *ss5_co
     // u_char dst_addr[128] = {0};
     if (atyp == SS5_ATYP_IPV4) {
         // u_char dst_addr[4] = {0};
-        uint16_t port = ntohs(*(uint16_t *)(buf + 8));
+        ss5_conn->port = ntohs(*(uint16_t *)(buf + 8));
 
         ss5_conn->raw_len = size;
         ss5_conn->raw = (u_char *)_CALLOC(1, size);
@@ -309,19 +193,17 @@ static void ss5_req(const u_char *buf, ssize_t size, socks5_connection_t *ss5_co
         // ss5_conn->addr_raw_len = 4;
         // ss5_conn->addr_raw = (u_char *)_CALLOC(1, ss5_conn->addr_raw_len);
         // memcpy(ss5_conn->addr_raw, buf[4], ss5_conn->addr_raw_len);
-        char ip[17] = {0};
+
+        // char ip[17] = {0};
         struct sockaddr_in addr;
         addr.sin_family = AF_INET;
         addr.sin_addr.s_addr = *(in_addr_t *)(buf + 4);
         // *(struct sockaddr_in *)buf[4];  // TODO: ntoh?
-        uv_ip4_name((const struct sockaddr_in *)&addr, ip, 16);
-        if (!tcp_connect(socks5->loop, ip, port, ss5_conn, on_back_connect, on_back_recv, on_back_close)) {
+        uv_ip4_name((const struct sockaddr_in *)&addr, ss5_conn->ip, 16);
+        if (!tcp_connect(socks5->loop, ss5_conn->ip, ss5_conn->port, ss5_conn, on_back_connect, on_back_recv,
+                         on_back_close)) {
             // error
-            u_char *ack_raw = (u_char *)_CALLOC(1, ss5_conn->raw_len);
-            memcpy(ack_raw, ss5_conn->raw, ss5_conn->raw_len);
-            ack_raw[1] = SS5_REP_ERR;
-            tcp_send(ss5_conn->fr_conn, (const char *)ack_raw, ss5_conn->raw_len);
-            _FREE_IF(ack_raw);
+            ss5_req_ack(ss5_conn, SS5_REP_ERR);
         }
     } else if (atyp == SS5_ATYP_IPV6) {
         _LOG("ss5 ipv6 type");
@@ -330,13 +212,28 @@ static void ss5_req(const u_char *buf, ssize_t size, socks5_connection_t *ss5_co
         // TODO: connect to dest
     } else if (atyp == SS5_ATYP_DOMAIN) {
         _LOG("ss5 domain type");
-        // TODO: resolve DNS
-        // TODO: connect to dest
+
+        ss5_conn->raw_len = size;
+        ss5_conn->raw = (u_char *)_CALLOC(1, size);
+        _CHECK_OOM(ss5_conn->raw);
+        memcpy(ss5_conn->raw, buf, size);
+
+        int d_len = (int)buf[4];  // TODO: unsigned to signed overflow?
+        char *domain = (char *)_CALLOC(1, d_len + 1);
+        _CHECK_OOM(domain);
+        memcpy(domain, buf + 5, d_len);
+
+        ss5_conn->port = ntohs(*(uint16_t *)(buf + 4 + d_len + 1));
+        _LOG("%s:%u", domain, ss5_conn->port);
+        // resolve DNS
+        if (!resolve_domain(socks5->loop, ss5_conn, domain, AF_INET)) {
+            ss5_req_ack(ss5_conn, SS5_REP_HOST_ERR);
+        }
     } else {
         goto ss5_auth_req_error;
     }
 
-    ss5_conn->phase = SS5_PHASE_DATA;
+    // ss5_conn->phase = SS5_PHASE_DATA;
     return;
 
 ss5_auth_req_error:
@@ -393,6 +290,65 @@ static void on_front_accept(tcp_connection_t *conn) {
     ss5_conn->fr_conn = conn;
     conn->data = ss5_conn;
     // socks5->on_accept(ss5_conn);
+}
+
+// typedef struct {
+//     socks5_connection_t *ss5_conn;
+//     socks5_server_t *socks5;
+// } addr_info_ex_t;
+
+void on_resolved(uv_getaddrinfo_t *resolver, int status, struct addrinfo *res) {
+    _LOG("on_resolved");
+    IF_UV_ERROR(status, "on resolve domain error", { return; });
+
+    socks5_connection_t *ss5_conn = (socks5_connection_t *)resolver->data;
+    if (!ss5_conn) {
+        _FREE_IF(resolver);
+        return;
+    }
+
+    socks5_server_t *socks5 = (socks5_server_t *)ss5_conn->fr_conn->serv->data;
+    assert(socks5);
+
+    if (res->ai_family == AF_INET) {
+        // ipv4
+        uv_ip4_name((struct sockaddr_in *)res->ai_addr, ss5_conn->ip, 16);
+        if (!tcp_connect(socks5->loop, ss5_conn->ip, ss5_conn->port, ss5_conn, on_back_connect, on_back_recv,
+                         on_back_close)) {
+            // error
+            ss5_req_ack(ss5_conn, SS5_REP_ERR);
+        }
+    } else if (res->ai_family == AF_INET6) {
+        // ipv6
+        uv_ip4_name((struct sockaddr_in *)res->ai_addr, ss5_conn->ip, 46);
+        // TODO:
+    } else {
+        // ipv4 or ipv6
+        uv_ip4_name((struct sockaddr_in *)res->ai_addr, ss5_conn->ip, 46);
+        // TODO:
+    }
+    _LOG("resolve: %s:%u", ss5_conn->ip, ss5_conn->port);
+
+    ss5_conn->resolver = NULL;
+    _FREE_IF(resolver);
+}
+
+bool resolve_domain(uv_loop_t *loop, socks5_connection_t *ss5_conn, char *domain, int family) {
+    _LOG("resolve_domain %d", ss5_conn->fr_conn->id);
+    struct addrinfo hints;
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+    hints.ai_flags = 0;
+
+    uv_getaddrinfo_t *resolver = (uv_getaddrinfo_t *)_CALLOC(1, sizeof(uv_getaddrinfo_t));
+    ss5_conn->resolver = resolver;
+    resolver->data = ss5_conn;
+    assert(ss5_conn->port);
+    int r = uv_getaddrinfo(loop, resolver, on_resolved, domain, NULL, &hints);
+    IF_UV_ERROR(r, "resolve domain error", { return false; });
+
+    return true;
 }
 
 /* -------------------------------------------------------------------------- */

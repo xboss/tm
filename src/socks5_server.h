@@ -16,6 +16,10 @@ typedef struct {
     socks5_server_t *socks5;
     u_char *raw;
     ssize_t raw_len;
+    uint16_t port;
+    char ip[47];
+
+    uv_getaddrinfo_t *resolver;
     // u_char atyp;
     // u_char *addr_raw;
     // size_t addr_raw_len;

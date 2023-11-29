@@ -14,8 +14,13 @@ typedef void (*on_tcp_connect_t)(tcp_connection_t *conn);
 typedef void (*on_tcp_recv_t)(tcp_connection_t *conn, const char *buf, ssize_t size);
 typedef void (*on_tcp_close_t)(tcp_connection_t *conn);
 
+#define TCP_CONN_ST_OFF 0x00
+#define TCP_CONN_ST_ON 0x01
+#define TCP_CONN_ST_CLOSING 0x02
+
 struct tcp_connection_s {
     int id;
+    char status;
     uv_tcp_t *cli;
     tcp_server_t *serv;
     // tcp_client_t *cli;

@@ -38,6 +38,7 @@ static void free_conn(tcp_connection_t *conn) {
 static void on_uv_close(uv_handle_t *handle) {
     _LOG("on_uv_close");
     tcp_connection_t *conn = (tcp_connection_t *)handle->data;
+
     if (!conn) {
         goto on_uv_close_end;
     }
@@ -48,19 +49,37 @@ static void on_uv_close(uv_handle_t *handle) {
     free_conn(conn);
 
 on_uv_close_end:
+    conn->status = TCP_CONN_ST_OFF;
     _FREE_IF(handle);
 }
 
 static void on_uv_write(uv_write_t *req, int status) {
     _LOG("on_uv_write");
+
+    uv_tcp_t *cli = (uv_tcp_t *)req->handle;
+    int closing = uv_is_closing((uv_handle_t *)cli);
+    if (closing) {
+        _LOG("closing......");
+        free_write_req(req);
+        return;
+    }
+
     IF_UV_ERROR(status, "tcp write error", {});
     free_write_req(req);
 }
 
 static void on_uv_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
     _LOG("on_uv_read");
+
+    int closing = uv_is_closing((uv_handle_t *)cli);
+    if (closing) {
+        _LOG("closing......");
+        free(buf->base);
+        return;
+    }
+
+    tcp_connection_t *conn = (tcp_connection_t *)cli->data;
     if (nread > 0) {
-        tcp_connection_t *conn = (tcp_connection_t *)cli->data;
         if (conn && conn->on_recv) {
             conn->on_recv(conn, buf->base, nread);
         }
@@ -68,8 +87,10 @@ static void on_uv_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
     }
     if (nread < 0) {
         if (nread != UV_EOF) fprintf(stderr, "tcp read error %s\n", uv_err_name(nread));
-        uv_close((uv_handle_t *)cli, on_uv_close);
+        // uv_close((uv_handle_t *)cli, on_uv_close);
+        close_tcp_connection(conn);
     }
+    _LOG("read n:%ld", nread);
 
     free(buf->base);
     _LOG("free buf base");
@@ -87,6 +108,14 @@ static void on_uv_connect(uv_connect_t *req, int status) {
     connect_req_t *connect_req = (connect_req_t *)req;
 
     uv_tcp_t *cli = (uv_tcp_t *)req->handle;
+
+    int closing = uv_is_closing((uv_handle_t *)cli);
+    if (closing) {
+        _LOG("closing......");
+        _FREE_IF(req);
+        return;
+    }
+
     tcp_connection_t *conn = init_tcp_connection(cli->accepted_fd, cli, NULL, connect_req->data,
                                                  connect_req->on_connect, connect_req->on_recv, connect_req->on_close);
     if (!conn) {
@@ -131,6 +160,7 @@ tcp_connection_t *init_tcp_connection(int id, uv_tcp_t *cli, tcp_server_t *serv,
         return NULL;
     });
 
+    conn->status = TCP_CONN_ST_ON;
     return conn;
 }
 
@@ -156,6 +186,7 @@ bool tcp_send(tcp_connection_t *conn, const char *buf, ssize_t size) {
     int r = uv_write((uv_write_t *)req, (uv_stream_t *)conn->cli, &req->buf, 1, on_uv_write);
     IF_UV_ERROR(r, "tcp send error", {
         free_write_req((uv_write_t *)req);
+        close_tcp_connection(conn);
         return false;
     });
     return true;
@@ -165,9 +196,16 @@ void close_tcp_connection(tcp_connection_t *conn) {
     if (!conn) {
         return;
     }
+
+    if (conn->status != TCP_CONN_ST_ON) {
+        return;
+    }
+
+    conn->status = TCP_CONN_ST_CLOSING;
     if (!conn->cli) {
         free_conn(conn);
     }
+    uv_read_stop((uv_stream_t *)conn->cli);
     uv_close((uv_handle_t *)conn->cli, on_uv_close);
 }
 
