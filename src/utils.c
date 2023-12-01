@@ -37,7 +37,7 @@ char *load_str_file(const char *filename) {
         if (js_len + len > FILE_R_BUF_SIZE * r_buf_cnt) {
             // TODO:
             r_buf_cnt *= 2;
-            LOG_D("realloc read buffer %d", FILE_R_BUF_SIZE * r_buf_cnt);
+            _LOG("realloc read buffer %d", FILE_R_BUF_SIZE * r_buf_cnt);
             p_offset = p - str;
             str = realloc(str, FILE_R_BUF_SIZE * r_buf_cnt);
             _CHECK_OOM(str);

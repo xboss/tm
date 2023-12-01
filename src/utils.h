@@ -40,7 +40,7 @@
 #define IF_UV_ERROR(_r, _msg, _act)                           \
     if ((_r) < 0) {                                           \
         fprintf(stderr, "" #_msg " %s\n", uv_strerror((_r))); \
-        _act                                                  \
+        { _act }                                              \
     }
 
 uint64_t ustime();

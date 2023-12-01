@@ -4,7 +4,7 @@
 #include <stdbool.h>
 #include <uv.h>
 
-#include "tcp_server.h"
+#include "tcp.h"
 
 typedef struct socks5_server_s socks5_server_t;
 // typedef struct socks5_connection_s socks5_connection_t;
@@ -18,8 +18,9 @@ typedef struct {
     ssize_t raw_len;
     uint16_t port;
     char ip[47];
+    int ref_cnt;
 
-    uv_getaddrinfo_t *resolver;
+    // uv_getaddrinfo_t *resolver;
     // u_char atyp;
     // u_char *addr_raw;
     // size_t addr_raw_len;

@@ -25,6 +25,6 @@ clean:
 	rm -rf $(OUTPUT_DIR)*
 
 test:
-	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_connection.c ./src/tcp_server.c ./test/test_server.c -o $(OUTPUT_DIR)test_server 
-	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_connection.c ./test/test_client.c -o $(OUTPUT_DIR)test_client 
-	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp_connection.c ./src/tcp_server.c ./src/socks5_server.c ./test/test_ss5.c -o $(OUTPUT_DIR)test_ss5
+	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp.c  ./test/test_server.c -o $(OUTPUT_DIR)test_server 
+	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp.c ./test/test_client.c -o $(OUTPUT_DIR)test_client 
+	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/tcp.c ./src/socks5_server.c ./test/test_ss5.c -o $(OUTPUT_DIR)test_ss5
