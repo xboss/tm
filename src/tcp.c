@@ -41,6 +41,7 @@ typedef struct {
     void *data;
     tcp_t *tcp;
     struct sockaddr_in addr;
+    int conn_id;
     // uint16_t port;
 } connect_req_t;
 
@@ -48,6 +49,11 @@ typedef struct {
     uv_write_t req;
     uv_buf_t buf;
 } write_req_t;
+
+inline static int gen_conn_id(tcp_t *tcp) {
+    assert(tcp);
+    return tcp->cid++ % INT_MAX;
+}
 
 static void free_write_req(uv_write_t *req) {
     write_req_t *wr = (write_req_t *)req;
@@ -125,6 +131,7 @@ static void on_tcp_write(uv_write_t *req, int status) {
 
     IF_UV_ERROR(status, "tcp write error", { close_tcp_connection(tcp, conn->id); });
     free_write_req(req);
+    conn->last_w_tm = mstime();
     _LOG("on_tcp_write id: %d", conn->id);
 }
 
@@ -138,6 +145,7 @@ static void on_tcp_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
     if (nread > 0) {
         if (tcp->on_recv) {
             tcp->on_recv(tcp, conn->id, buf->base, nread);
+            conn->last_r_tm = mstime();
         }
     }
     if (nread < 0) {
@@ -175,6 +183,7 @@ static tcp_connection_t *init_conn(int id, uv_tcp_t *cli, tcp_t *tcp, char mode,
     conn->cli = cli;
     conn->data = data;
     conn->mode = mode;
+    conn->last_r_tm = conn->last_w_tm = mstime();
     // conn->couple_conn_id = 0;
 
     // cli->data = init_id_pointer(conn->id);
@@ -203,7 +212,7 @@ static void on_tcp_connect(uv_connect_t *req, int status) {
     });
     tcp_t *tcp = connect_req->tcp;
     assert(tcp);
-    tcp_connection_t *conn = init_conn(tcp->cid++, cli, tcp, TCP_CONN_MODE_CLI, connect_req->data);
+    tcp_connection_t *conn = init_conn(connect_req->conn_id, cli, tcp, TCP_CONN_MODE_CLI, connect_req->data);
     if (!conn) {
         _FREE_IF(req);
         uv_close((uv_handle_t *)cli, on_tcp_close);
@@ -235,7 +244,7 @@ static void on_tcp_accept(uv_stream_t *server, int status) {
         _FREE_IF(cli);
         return;
     });
-    tcp_connection_t *conn = init_conn(tcp->cid++, cli, tcp, TCP_CONN_MODE_SERV, NULL);
+    tcp_connection_t *conn = init_conn(gen_conn_id(tcp), cli, tcp, TCP_CONN_MODE_SERV, NULL);
     if (!conn) {
         fprintf(stderr, "init tcp connection error");
         _FREE_IF(cli);
@@ -383,36 +392,38 @@ bool start_tcp_server(tcp_t *tcp, const char *ip, uint16_t port) {
     return start_tcp_server_with_sockaddr(tcp, sockaddr);
 }
 
-bool connect_tcp_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr, void *data) {
+int connect_tcp_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr, void *data) {
     if (!tcp) {
-        return false;
+        return 0;
     }
     uv_tcp_t *cli = (uv_tcp_t *)_CALLOC(1, sizeof(uv_tcp_t));
     _CHECK_OOM(cli);
     int r = uv_tcp_init(tcp->loop, cli);
     IF_UV_ERROR(r, "tcp connect error", {
         uv_close((uv_handle_t *)cli, on_tcp_close);
-        return false;
+        return 0;
     });
 
     connect_req_t *connect_req = (connect_req_t *)_CALLOC(1, sizeof(connect_req_t));
     connect_req->data = data;
     connect_req->addr = sockaddr;
+    // TODO: cid
+    connect_req->conn_id = gen_conn_id(tcp);
     // connect_req->port = port;
     connect_req->tcp = tcp;
     r = uv_tcp_connect((uv_connect_t *)connect_req, cli, (const struct sockaddr *)&sockaddr, on_tcp_connect);
     IF_UV_ERROR(r, "tcp connect error", {
         _FREE_IF(connect_req);
         uv_close((uv_handle_t *)cli, on_tcp_close);
-        return false;
+        return 0;
     });
 
-    return true;
+    return connect_req->conn_id;
 }
 
-bool connect_tcp(tcp_t *tcp, const char *ip, uint16_t port, void *data) {
+int connect_tcp(tcp_t *tcp, const char *ip, uint16_t port, void *data) {
     if (!tcp || !ip || port <= 0) {
-        return false;
+        return 0;
     }
     struct sockaddr_in sockaddr;
     int r = uv_ip4_addr(ip, port, &sockaddr);

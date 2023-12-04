@@ -43,6 +43,9 @@
         { _act }                                              \
     }
 
+#define IV_LEN 32
+#define KEY_LEN 32
+
 uint64_t ustime();
 uint64_t mstime();
 char *load_str_file(const char *filename);

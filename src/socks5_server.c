@@ -38,6 +38,8 @@ REP: 回复请求的状态
 struct socks5_server_s {
     uv_loop_t *loop;
     tcp_t *tcp;
+    char *key;
+    char *iv;
 };
 
 typedef struct {

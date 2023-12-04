@@ -10,9 +10,16 @@
         _ACT                                                    \
     }
 
+typedef struct {
+    uv_timer_t timer;
+    int conn_id;
+    int couple_id;
+} timer_req_t;
+
 /* -------------------------------------------------------------------------- */
 /*                             connection manager                             */
 /* -------------------------------------------------------------------------- */
+static void close_n2n_conn(n2n_t *n2n, int conn_id);
 
 static n2n_conn_t *get_conn(n2n_t *n2n, int conn_id) {
     if (conn_id <= 0 || !n2n || !n2n->n2n_conns) {
@@ -38,10 +45,33 @@ static void del_conn(n2n_t *n2n, n2n_conn_t *conn) {
     HASH_DEL(n2n->n2n_conns, conn);
 }
 
+void on_conn_timer_close(uv_handle_t *handle) {
+    _LOG("on_conn_timer_close...");
+    n2n_t *n2n = (n2n_t *)handle->data;
+    timer_req_t *timer_req = (timer_req_t *)handle;
+    int conn_id = timer_req->conn_id;
+    IF_GET_TCP_CONN(tcp_conn, n2n->tcp, conn_id, { return; });
+    IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, {});
+    assert(n2n_conn);
+    if (n2n_conn->timer) {
+        _FREE_IF(n2n_conn->timer);
+    }
+    close_n2n_conn(n2n, conn_id);
+}
+
 static void free_conn(n2n_t *n2n, n2n_conn_t *conn) {
     if (!conn) {
         return;
     }
+    if (conn->timer) {
+        int r = uv_timer_stop(conn->timer);
+        IF_UV_ERROR(r, "n2n conn timer stop error", {});
+        if (!uv_is_closing((uv_handle_t *)conn->timer)) {
+            uv_close((uv_handle_t *)conn->timer, on_conn_timer_close);
+        }
+        // _FREE_IF(conn->timer);
+    }
+
     if (conn->n2n_buf_list) {
         n2n_buf_t *item, *tmp;
         DL_FOREACH_SAFE(conn->n2n_buf_list, item, tmp) {
@@ -51,18 +81,10 @@ static void free_conn(n2n_t *n2n, n2n_conn_t *conn) {
             }
             _FREE_IF(item);
         }
+        conn->n2n_buf_list = NULL;
     }
     del_conn(n2n, conn);
     _FREE_IF(conn);
-}
-
-static n2n_conn_t *new_conn(n2n_t *n2n, int conn_id, int couple_id) {
-    n2n_conn_t *n2n_conn = (n2n_conn_t *)_CALLOC(1, sizeof(n2n_conn_t));
-    n2n_conn->conn_id = conn_id;
-    n2n_conn->couple_id = couple_id;
-    n2n_conn->n2n_buf_list = NULL;
-    add_conn(n2n, n2n_conn);
-    return n2n_conn;
 }
 
 static void close_n2n_conn(n2n_t *n2n, int conn_id) {
@@ -75,22 +97,28 @@ static void close_n2n_conn(n2n_t *n2n, int conn_id) {
         return;
     }
 
-    if (tcp_conn && !n2n_conn) {
-        // close_tcp_connection(n2n->tcp, conn_id);
-        return;
+    assert(n2n_conn);
+
+    // int r = uv_timer_stop(n2n_conn->timer);
+    // IF_UV_ERROR(r, "n2n conn timer stop error", {});
+
+    if (tcp_conn) {
+        close_tcp_connection(n2n->tcp, conn_id);
     }
 
-    if (!tcp_conn && n2n_conn) {
-        free_conn(n2n, n2n_conn);
-        return;
-    }
+    // if (!n2n_conn) {
+    //     return;
+    // }
 
     int couple_id = n2n_conn->couple_id;
-    if (couple_id <= 0) {
-        _LOG("%d does not have couple  %d", conn_id, couple_id);
-        return;
-    }
-    free_conn(n2n, n2n_conn);
+    assert(couple_id > 0);
+
+    // if (!tcp_conn && n2n_conn) {
+    //     free_conn(n2n, n2n_conn);
+    //     return;
+    // }
+
+    // free_conn(n2n, n2n_conn);
 
     IF_GET_TCP_CONN(couple_tcp_conn, n2n->tcp, couple_id, {});
     IF_GET_N2N_CONN(couple_n2n_conn, n2n, couple_id, {});
@@ -99,16 +127,71 @@ static void close_n2n_conn(n2n_t *n2n, int conn_id) {
         return;
     }
 
-    if (couple_tcp_conn && !couple_n2n_conn) {
+    assert(couple_n2n_conn);
+
+    // r = uv_timer_stop(couple_n2n_conn->timer);
+    // IF_UV_ERROR(r, "n2n couple conn timer stop error", {});
+
+    if (couple_tcp_conn) {
         close_tcp_connection(n2n->tcp, couple_id);
-        return;
     }
 
-    if (!couple_tcp_conn && couple_n2n_conn) {
-        free_conn(n2n, couple_n2n_conn);
+    // if (!couple_tcp_conn && couple_n2n_conn) {
+    //     free_conn(n2n, couple_n2n_conn);
+    //     return;
+    // }
+    // free_conn(n2n, couple_n2n_conn);
+}
+
+void on_conn_timer(uv_timer_t *handle) {
+    _LOG("on_conn_timer...");
+    n2n_t *n2n = (n2n_t *)handle->data;
+    timer_req_t *timer_req = (timer_req_t *)handle;
+    int conn_id = timer_req->conn_id;
+    // int couple_id = timer_req->couple_id;
+
+    IF_GET_TCP_CONN(tcp_conn, n2n->tcp, conn_id, { return; });
+    uint64_t now = mstime();
+    if ((now - tcp_conn->last_r_tm) > n2n->r_keepalive * 1000L) {
+        _LOG("timeout close %d", conn_id);
+        int r = uv_timer_stop(handle);
+        IF_UV_ERROR(r, "n2n conn timer stop error", {});
+        if (!uv_is_closing((uv_handle_t *)handle)) {
+            uv_close((uv_handle_t *)handle, on_conn_timer_close);
+        }
         return;
     }
-    free_conn(n2n, couple_n2n_conn);
+}
+
+static n2n_conn_t *new_conn(n2n_t *n2n, int conn_id, int couple_id) {
+    n2n_conn_t *n2n_conn = (n2n_conn_t *)_CALLOC(1, sizeof(n2n_conn_t));
+    _CHECK_OOM(n2n_conn);
+    n2n_conn->conn_id = conn_id;
+    n2n_conn->couple_id = couple_id;
+    n2n_conn->n2n_buf_list = NULL;
+
+    // uv_timer_t *timer = (uv_timer_t *)_CALLOC(1, sizeof(uv_timer_t));
+    timer_req_t *timer_req = (timer_req_t *)_CALLOC(1, sizeof(timer_req_t));
+    _CHECK_OOM(timer_req)
+    int r = uv_timer_init(n2n->loop, (uv_timer_t *)timer_req);
+    IF_UV_ERROR(r, "n2n conn timer init error", {
+        _FREE_IF(timer_req);
+        free_conn(n2n, n2n_conn);
+        return NULL;
+    });
+    timer_req->timer.data = n2n;
+    timer_req->conn_id = conn_id;
+    timer_req->couple_id = couple_id;
+    r = uv_timer_start((uv_timer_t *)timer_req, on_conn_timer, 0, 1 * 1000);
+    IF_UV_ERROR(r, "n2n conn timer start error", {
+        _FREE_IF(timer_req);
+        free_conn(n2n, n2n_conn);
+        return NULL;
+    });
+    n2n_conn->timer = (uv_timer_t *)timer_req;
+
+    add_conn(n2n, n2n_conn);
+    return n2n_conn;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -121,15 +204,19 @@ static void on_front_accept(tcp_t *tcp, int conn_id) {
     n2n_t *n2n = (n2n_t *)tcp->data;
     assert(n2n);
 
-    int *p_conn_id = (int *)_CALLOC(1, sizeof(int));
-    _CHECK_OOM(p_conn_id);
-    *p_conn_id = conn_id;
+    // int *p_conn_id = (int *)_CALLOC(1, sizeof(int));
+    // _CHECK_OOM(p_conn_id);
+    // *p_conn_id = conn_id;
+
     // connect to backend
-    if (!connect_tcp_with_sockaddr(tcp, n2n->target_addr, p_conn_id)) {
+    int couple_id = connect_tcp_with_sockaddr(tcp, n2n->target_addr, NULL);
+    if (couple_id <= 0) {
         // error
+        // _FREE_IF(p_conn_id);
         close_n2n_conn(n2n, conn_id);
     }
-    new_conn(n2n, conn_id, 0);
+    new_conn(n2n, conn_id, couple_id);
+    new_conn(n2n, couple_id, conn_id);
 }
 
 static void on_tcp_close(tcp_t *tcp, int conn_id) {
@@ -137,7 +224,10 @@ static void on_tcp_close(tcp_t *tcp, int conn_id) {
     n2n_t *n2n = (n2n_t *)tcp->data;
     assert(n2n);
     // IF_GET_TCP_CONN(tcp_conn, tcp, conn_id, { return; });
-    close_n2n_conn(n2n, conn_id);
+    // close_n2n_conn(n2n, conn_id);
+    IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, { return; });
+    assert(n2n_conn);
+    free_conn(n2n, n2n_conn);
 }
 
 static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) {
@@ -151,7 +241,8 @@ static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) 
     });
 
     int couple_id = n2n_conn->couple_id;
-    if (couple_id <= 0) {
+    IF_GET_TCP_CONN(tcp_cp_conn, tcp, couple_id, {
+        // TODO: couple conn可能会连接失败
         // maybe backend connection does not create
         n2n_buf_t *n2n_buf = (n2n_buf_t *)_CALLOC(1, sizeof(n2n_buf_t));
         _CHECK_OOM(n2n_buf);
@@ -161,31 +252,12 @@ static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) 
         n2n_buf->size = size;
         DL_APPEND(n2n_conn->n2n_buf_list, n2n_buf);
         return;
-    }
-
-    IF_GET_TCP_CONN(couple_conn, tcp, couple_id, {
-        close_n2n_conn(n2n, conn_id);
-        return;
     });
 
-    // int rt = 0;
-    // // check buf and send
-    // if (n2n_conn->n2n_buf_list) {
-    //     n2n_buf_t *item, *tmp;
-    //     DL_FOREACH_SAFE(n2n_conn->n2n_buf_list, item, tmp) {
-    //         DL_DELETE(n2n_conn->n2n_buf_list, item);
-    //         if (item->buf) {
-    //             rt = tcp_send(tcp, couple_id, item->buf, item->size);
-    //             if (!rt) {
-    //                 close_n2n_conn(n2n, conn_id);
-    //                 return;
-    //             }
-    //             _FREE_IF(item->buf);
-    //         }
-    //         _FREE_IF(item);
-    //     }
-    //     n2n_conn->n2n_buf_list = NULL;
-    // }
+    // IF_GET_TCP_CONN(couple_conn, tcp, couple_id, {
+    //     close_n2n_conn(n2n, conn_id);
+    //     return;
+    // });
 
     // send to couple
     int rt = tcp_send(tcp, couple_id, buf, size);
@@ -197,24 +269,22 @@ static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) 
 static void on_back_connect(tcp_t *tcp, int conn_id) {
     _LOG("back connect ok %d", conn_id);
     IF_GET_TCP_CONN(tcp_conn, tcp, conn_id, { return; });
-    int couple_id = *(int *)tcp_conn->data;
-    _FREE_IF(tcp_conn->data);
-    tcp_conn->data = NULL;
     n2n_t *n2n = (n2n_t *)tcp->data;
-    IF_GET_N2N_CONN(n2n_conn, n2n, couple_id, {
+    IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, {
         close_n2n_conn(n2n, conn_id);
         return;
     });
-    n2n_conn->couple_id = conn_id;
-    new_conn(n2n, conn_id, couple_id);
-    _LOG("back connect create couple %d %d", conn_id, couple_id);
-
+    int couple_id = n2n_conn->couple_id;
+    IF_GET_N2N_CONN(n2n_cp_conn, n2n, couple_id, {
+        close_n2n_conn(n2n, conn_id);
+        return;
+    });
     // check buf and send
-    if (n2n_conn->n2n_buf_list) {
+    if (n2n_cp_conn->n2n_buf_list) {
         _LOG("back connect couple send %d from %d", couple_id, conn_id);
         n2n_buf_t *item, *tmp;
-        DL_FOREACH_SAFE(n2n_conn->n2n_buf_list, item, tmp) {
-            DL_DELETE(n2n_conn->n2n_buf_list, item);
+        DL_FOREACH_SAFE(n2n_cp_conn->n2n_buf_list, item, tmp) {
+            DL_DELETE(n2n_cp_conn->n2n_buf_list, item);
             if (item->buf) {
                 int rt = tcp_send(tcp, conn_id, item->buf, item->size);
                 if (!rt) {
@@ -233,7 +303,7 @@ static void on_back_connect(tcp_t *tcp, int conn_id) {
 /*                                 n2n server                                 */
 /* -------------------------------------------------------------------------- */
 n2n_t *init_n2n_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_port, const char *target_ip,
-                       uint16_t target_port) {
+                       uint16_t target_port, int keepalive) {
     if (!loop || !listen_ip || listen_port <= 0 || !target_ip || target_port <= 0) {
         return NULL;
     }
@@ -255,6 +325,17 @@ n2n_t *init_n2n_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_p
         free_tcp(tcp);
         return NULL;
     }
+
+    // uv_timer_t *timer = (uv_timer_t *)_CALLOC(1, sizeof(uv_timer_t));
+    // _CHECK_OOM(timer)
+    // r = uv_timer_init(loop, timer);
+    // if (!r) {
+    //     _FREE_IF(timer);
+    //     free_tcp(tcp);
+    // }
+    // timer->data = n2n;
+    // r = uv_timer_start(timer, on_timer, 0, 1 * 1000 * 1000);
+
     n2n_t *n2n = (n2n_t *)_CALLOC(1, sizeof(n2n_t));
     _CHECK_OOM(n2n);
     tcp->data = n2n;
@@ -263,6 +344,11 @@ n2n_t *init_n2n_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_p
     n2n->listen_addr = listen_sockaddr;
     n2n->target_addr = target_sockaddr;
     n2n->n2n_conns = NULL;
+    // n2n->timer = timer;
+
+    n2n->r_keepalive = keepalive;
+    n2n->w_keepalive = keepalive;
+
     return n2n;
 }
 

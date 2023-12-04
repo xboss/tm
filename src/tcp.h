@@ -41,6 +41,8 @@ struct tcp_connection_s {
     void *data;
     char mode;
     // int couple_conn_id;
+    uint64_t last_r_tm;
+    uint64_t last_w_tm;
 
     UT_hash_handle hh;
 };
@@ -67,8 +69,8 @@ void free_tcp(tcp_t *tcp);
 bool start_tcp_server_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr);
 bool start_tcp_server(tcp_t *tcp, const char *ip, uint16_t port);
 void stop_tcp_server(tcp_t *tcp);
-bool connect_tcp_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr, void *data);
-bool connect_tcp(tcp_t *tcp, const char *ip, uint16_t port, void *data);
+int connect_tcp_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr, void *data);
+int connect_tcp(tcp_t *tcp, const char *ip, uint16_t port, void *data);
 void close_tcp_connection(tcp_t *tcp, int conn_id);
 bool tcp_send(tcp_t *tcp, int conn_id, const char *buf, ssize_t size);
 tcp_connection_t *get_tcp_connection(tcp_t *tcp, int conn_id);
