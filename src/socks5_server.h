@@ -11,6 +11,8 @@ typedef struct socks5_server_s socks5_server_t;
 
 typedef struct {
     int phase;
+    // int fr_id;
+    // int bk_id;
     tcp_connection_t *fr_conn;
     tcp_connection_t *bk_conn;
     socks5_server_t *socks5;
@@ -18,7 +20,7 @@ typedef struct {
     ssize_t raw_len;
     uint16_t port;
     char ip[47];
-    int ref_cnt;
+    // int ref_cnt;
 
     // uv_getaddrinfo_t *resolver;
     // u_char atyp;
