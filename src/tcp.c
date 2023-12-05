@@ -98,7 +98,6 @@ static void on_tcp_close(uv_handle_t *handle) {
     free_conn(conn);
 
 on_uv_close_end:
-    // conn->status = TCP_CONN_ST_OFF;
     _FREE_IF(handle);
 }
 
@@ -179,17 +178,13 @@ static tcp_connection_t *init_conn(int id, uv_tcp_t *cli, tcp_t *tcp, char mode,
     conn->data = data;
     conn->mode = mode;
     conn->last_r_tm = conn->last_w_tm = mstime();
-    // conn->couple_conn_id = 0;
 
-    // cli->data = init_id_pointer(conn->id);
     cli->data = conn;
     int r = uv_read_start((uv_stream_t *)cli, alloc_buffer, on_tcp_read);
     IF_UV_ERROR(r, "tcp start read error", {
-        // free_id_pointer((int *)cli->data);
         free_conn(conn);
         return NULL;
     });
-    // conn->status = TCP_CONN_ST_ON;
     return conn;
 }
 
@@ -201,25 +196,17 @@ static void on_tcp_connect(uv_connect_t *req, int status) {
     tcp_t *tcp = connect_req->tcp;
     assert(tcp);
 
-    // int conn_id = 0;
-
     IF_UV_ERROR(status, "tcp client connect error", {
-        // _FREE_IF(req);
         close_conn(cli);
-        // uv_close((uv_handle_t *)cli, on_tcp_close);
         goto on_tcp_connect_end;
     });
 
     tcp_connection_t *conn = init_conn(connect_req->conn_id, cli, tcp, TCP_CONN_MODE_CLI, connect_req->data);
     if (!conn) {
-        // _FREE_IF(req);
-        // uv_close((uv_handle_t *)cli, on_tcp_close);
         close_conn(cli);
         goto on_tcp_connect_end;
     }
-    // conn_id = conn->id;
     conn->c_addr = connect_req->addr;
-    // conn->c_port = connect_req->port;
     add_conn(tcp, conn);
 
     if (tcp->on_connect) {
@@ -238,24 +225,18 @@ static void on_tcp_accept(uv_stream_t *server, int status) {
     _CHECK_OOM(cli);
     int r = uv_tcp_init(server->loop, cli);
     IF_UV_ERROR(r, "new tcp server connection error", {
-        // _FREE_IF(cli);
-        // uv_close((uv_handle_t *)cli, on_tcp_close);
         close_conn(cli);
         return;
     });
     tcp_t *tcp = (tcp_t *)server->data;
     r = uv_accept(server, (uv_stream_t *)cli);
     IF_UV_ERROR(r, "accept tcp server connection error", {
-        // _FREE_IF(cli);
-        // uv_close((uv_handle_t *)cli, on_tcp_close);
         close_conn(cli);
         return;
     });
     tcp_connection_t *conn = init_conn(gen_conn_id(tcp), cli, tcp, TCP_CONN_MODE_SERV, NULL);
     if (!conn) {
         fprintf(stderr, "init tcp connection error");
-        // _FREE_IF(cli);
-        // uv_close((uv_handle_t *)cli, on_tcp_close);
         close_conn(cli);
         return;
     }
@@ -280,19 +261,8 @@ void close_tcp_connection(tcp_t *tcp, int conn_id) {
         return;
     }
 
-    if (!conn->cli) {
-        free_conn(conn);
-        return;
-    }
+    assert(conn->cli);
 
-    // if (uv_is_closing((uv_handle_t *)conn->cli)) {
-    //     _LOG("closing...... when close id: %d", conn_id);
-    //     return;
-    // }
-
-    // int r = uv_read_stop((uv_stream_t *)conn->cli);
-    // IF_UV_ERROR(r, "stop read error when closing connection", {});
-    // uv_close((uv_handle_t *)conn->cli, on_tcp_close);
     close_conn(conn->cli);
     _LOG("close_tcp_connection end %d", conn_id);
 }
