@@ -29,3 +29,4 @@ test:
 	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/utils.c ./src/tcp.c ./test/test_client.c -o $(OUTPUT_DIR)test_client 
 	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/utils.c ./src/tcp.c ./src/socks5_server.c ./test/test_ss5.c -o $(OUTPUT_DIR)test_ss5
 	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/utils.c ./src/tcp.c ./src/n2n_server.c ./test/test_n2n.c -o $(OUTPUT_DIR)test_n2n
+	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/utils.c ./src/tcp.c  ./test/test.c -o $(OUTPUT_DIR)test

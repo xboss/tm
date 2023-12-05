@@ -69,7 +69,6 @@ static void free_conn(n2n_t *n2n, n2n_conn_t *conn) {
         if (!uv_is_closing((uv_handle_t *)conn->timer)) {
             uv_close((uv_handle_t *)conn->timer, on_conn_timer_close);
         }
-        // _FREE_IF(conn->timer);
     }
 
     if (conn->n2n_buf_list) {
@@ -96,71 +95,74 @@ static void close_n2n_conn(n2n_t *n2n, int conn_id) {
     if (!tcp_conn && !n2n_conn) {
         return;
     }
-
     assert(n2n_conn);
-
-    // int r = uv_timer_stop(n2n_conn->timer);
-    // IF_UV_ERROR(r, "n2n conn timer stop error", {});
-
     if (tcp_conn) {
         close_tcp_connection(n2n->tcp, conn_id);
     }
-
-    // if (!n2n_conn) {
-    //     return;
-    // }
-
     int couple_id = n2n_conn->couple_id;
     assert(couple_id > 0);
-
-    // if (!tcp_conn && n2n_conn) {
-    //     free_conn(n2n, n2n_conn);
-    //     return;
-    // }
-
-    // free_conn(n2n, n2n_conn);
-
     IF_GET_TCP_CONN(couple_tcp_conn, n2n->tcp, couple_id, {});
     IF_GET_N2N_CONN(couple_n2n_conn, n2n, couple_id, {});
-
     if (!couple_tcp_conn && !couple_n2n_conn) {
         return;
     }
-
     assert(couple_n2n_conn);
-
-    // r = uv_timer_stop(couple_n2n_conn->timer);
-    // IF_UV_ERROR(r, "n2n couple conn timer stop error", {});
-
     if (couple_tcp_conn) {
         close_tcp_connection(n2n->tcp, couple_id);
     }
-
-    // if (!couple_tcp_conn && couple_n2n_conn) {
-    //     free_conn(n2n, couple_n2n_conn);
-    //     return;
-    // }
-    // free_conn(n2n, couple_n2n_conn);
 }
 
-void on_conn_timer(uv_timer_t *handle) {
+static void on_conn_timer(uv_timer_t *handle) {
     _LOG("on_conn_timer...");
     n2n_t *n2n = (n2n_t *)handle->data;
     timer_req_t *timer_req = (timer_req_t *)handle;
     int conn_id = timer_req->conn_id;
-    // int couple_id = timer_req->couple_id;
+
+    uint64_t now = mstime();
+    IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, {});
+    if (n2n_conn && n2n_conn->start_connect_tm > 0 && now - n2n_conn->start_connect_tm > n2n->connect_timeout) {
+        _LOG("on_conn_timer connect timeout %llu", now - n2n_conn->start_connect_tm);
+        goto on_conn_timer_timout;
+    }
 
     IF_GET_TCP_CONN(tcp_conn, n2n->tcp, conn_id, { return; });
-    uint64_t now = mstime();
     if ((now - tcp_conn->last_r_tm) > n2n->r_keepalive * 1000L) {
-        _LOG("timeout close %d", conn_id);
-        int r = uv_timer_stop(handle);
-        IF_UV_ERROR(r, "n2n conn timer stop error", {});
-        if (!uv_is_closing((uv_handle_t *)handle)) {
-            uv_close((uv_handle_t *)handle, on_conn_timer_close);
-        }
-        return;
+        _LOG("on_conn_timer read timeout %llu", now - tcp_conn->last_r_tm);
+        goto on_conn_timer_timout;
     }
+    return;
+
+on_conn_timer_timout:
+    _LOG("timeout close %d", conn_id);
+    int r = uv_timer_stop(handle);
+    IF_UV_ERROR(r, "n2n conn timer stop error", {});
+    if (!uv_is_closing((uv_handle_t *)handle)) {
+        uv_close((uv_handle_t *)handle, on_conn_timer_close);
+    }
+}
+
+static bool start_conn_timer(n2n_t *n2n, n2n_conn_t *n2n_conn) {
+    timer_req_t *timer_req = (timer_req_t *)_CALLOC(1, sizeof(timer_req_t));
+    _CHECK_OOM(timer_req)
+    int r = uv_timer_init(n2n->loop, (uv_timer_t *)timer_req);
+    IF_UV_ERROR(r, "n2n conn timer init error", {
+        _FREE_IF(timer_req);
+        // free_conn(n2n, n2n_conn);
+        // return NULL;
+        return false;
+    });
+    timer_req->timer.data = n2n;
+    timer_req->conn_id = n2n_conn->conn_id;
+    timer_req->couple_id = n2n_conn->couple_id;
+    r = uv_timer_start((uv_timer_t *)timer_req, on_conn_timer, 0, 1 * 1000);
+    IF_UV_ERROR(r, "n2n conn timer start error", {
+        _FREE_IF(timer_req);
+        // free_conn(n2n, n2n_conn);
+        // return NULL;
+        return false;
+    });
+    n2n_conn->timer = (uv_timer_t *)timer_req;
+    return true;
 }
 
 static n2n_conn_t *new_conn(n2n_t *n2n, int conn_id, int couple_id) {
@@ -169,26 +171,27 @@ static n2n_conn_t *new_conn(n2n_t *n2n, int conn_id, int couple_id) {
     n2n_conn->conn_id = conn_id;
     n2n_conn->couple_id = couple_id;
     n2n_conn->n2n_buf_list = NULL;
+    n2n_conn->timer = NULL;
+    n2n_conn->start_connect_tm = mstime();
 
-    // uv_timer_t *timer = (uv_timer_t *)_CALLOC(1, sizeof(uv_timer_t));
-    timer_req_t *timer_req = (timer_req_t *)_CALLOC(1, sizeof(timer_req_t));
-    _CHECK_OOM(timer_req)
-    int r = uv_timer_init(n2n->loop, (uv_timer_t *)timer_req);
-    IF_UV_ERROR(r, "n2n conn timer init error", {
-        _FREE_IF(timer_req);
-        free_conn(n2n, n2n_conn);
-        return NULL;
-    });
-    timer_req->timer.data = n2n;
-    timer_req->conn_id = conn_id;
-    timer_req->couple_id = couple_id;
-    r = uv_timer_start((uv_timer_t *)timer_req, on_conn_timer, 0, 1 * 1000);
-    IF_UV_ERROR(r, "n2n conn timer start error", {
-        _FREE_IF(timer_req);
-        free_conn(n2n, n2n_conn);
-        return NULL;
-    });
-    n2n_conn->timer = (uv_timer_t *)timer_req;
+    // timer_req_t *timer_req = (timer_req_t *)_CALLOC(1, sizeof(timer_req_t));
+    // _CHECK_OOM(timer_req)
+    // int r = uv_timer_init(n2n->loop, (uv_timer_t *)timer_req);
+    // IF_UV_ERROR(r, "n2n conn timer init error", {
+    //     _FREE_IF(timer_req);
+    //     free_conn(n2n, n2n_conn);
+    //     return NULL;
+    // });
+    // timer_req->timer.data = n2n;
+    // timer_req->conn_id = conn_id;
+    // timer_req->couple_id = couple_id;
+    // r = uv_timer_start((uv_timer_t *)timer_req, on_conn_timer, 0, 1 * 1000);
+    // IF_UV_ERROR(r, "n2n conn timer start error", {
+    //     _FREE_IF(timer_req);
+    //     free_conn(n2n, n2n_conn);
+    //     return NULL;
+    // });
+    // n2n_conn->timer = (uv_timer_t *)timer_req;
 
     add_conn(n2n, n2n_conn);
     return n2n_conn;
@@ -204,27 +207,24 @@ static void on_front_accept(tcp_t *tcp, int conn_id) {
     n2n_t *n2n = (n2n_t *)tcp->data;
     assert(n2n);
 
-    // int *p_conn_id = (int *)_CALLOC(1, sizeof(int));
-    // _CHECK_OOM(p_conn_id);
-    // *p_conn_id = conn_id;
-
     // connect to backend
     int couple_id = connect_tcp_with_sockaddr(tcp, n2n->target_addr, NULL);
     if (couple_id <= 0) {
         // error
-        // _FREE_IF(p_conn_id);
         close_n2n_conn(n2n, conn_id);
     }
-    new_conn(n2n, conn_id, couple_id);
+    n2n_conn_t *n2n_conn = new_conn(n2n, conn_id, couple_id);
     new_conn(n2n, couple_id, conn_id);
+    if (!start_conn_timer(n2n, n2n_conn)) {
+        _LOG("on front accept start conn timer error %d", conn_id);
+        close_n2n_conn(n2n, conn_id);
+    }
 }
 
 static void on_tcp_close(tcp_t *tcp, int conn_id) {
     _LOG("on tcp close %d", conn_id);
     n2n_t *n2n = (n2n_t *)tcp->data;
     assert(n2n);
-    // IF_GET_TCP_CONN(tcp_conn, tcp, conn_id, { return; });
-    // close_n2n_conn(n2n, conn_id);
     IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, { return; });
     assert(n2n_conn);
     free_conn(n2n, n2n_conn);
@@ -254,11 +254,6 @@ static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) 
         return;
     });
 
-    // IF_GET_TCP_CONN(couple_conn, tcp, couple_id, {
-    //     close_n2n_conn(n2n, conn_id);
-    //     return;
-    // });
-
     // send to couple
     int rt = tcp_send(tcp, couple_id, buf, size);
     if (!rt) {
@@ -279,6 +274,13 @@ static void on_back_connect(tcp_t *tcp, int conn_id) {
         close_n2n_conn(n2n, conn_id);
         return;
     });
+
+    n2n_conn->start_connect_tm = 0;
+    if (!start_conn_timer(n2n, n2n_conn)) {
+        _LOG("on_back_connect start conn timer error %d", conn_id);
+        close_n2n_conn(n2n, conn_id);
+    }
+
     // check buf and send
     if (n2n_cp_conn->n2n_buf_list) {
         _LOG("back connect couple send %d from %d", couple_id, conn_id);
@@ -302,8 +304,12 @@ static void on_back_connect(tcp_t *tcp, int conn_id) {
 /* -------------------------------------------------------------------------- */
 /*                                 n2n server                                 */
 /* -------------------------------------------------------------------------- */
+
+static const int def_keepalive = 30;
+static const uint64_t def_connect_timeout = 60000UL;
+
 n2n_t *init_n2n_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_port, const char *target_ip,
-                       uint16_t target_port, int keepalive) {
+                       uint16_t target_port) {
     if (!loop || !listen_ip || listen_port <= 0 || !target_ip || target_port <= 0) {
         return NULL;
     }
@@ -311,31 +317,17 @@ n2n_t *init_n2n_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_p
     if (!tcp) {
         return NULL;
     }
-
     struct sockaddr_in listen_sockaddr;
     int r = uv_ip4_addr(listen_ip, listen_port, &listen_sockaddr);
     IF_UV_ERROR(r, "listen ipv4 addr error", { return false; });
-
     struct sockaddr_in target_sockaddr;
     r = uv_ip4_addr(target_ip, target_port, &target_sockaddr);
     IF_UV_ERROR(r, "listen ipv4 addr error", { return false; });
-
     bool rt = start_tcp_server_with_sockaddr(tcp, listen_sockaddr);
     if (!rt) {
         free_tcp(tcp);
         return NULL;
     }
-
-    // uv_timer_t *timer = (uv_timer_t *)_CALLOC(1, sizeof(uv_timer_t));
-    // _CHECK_OOM(timer)
-    // r = uv_timer_init(loop, timer);
-    // if (!r) {
-    //     _FREE_IF(timer);
-    //     free_tcp(tcp);
-    // }
-    // timer->data = n2n;
-    // r = uv_timer_start(timer, on_timer, 0, 1 * 1000 * 1000);
-
     n2n_t *n2n = (n2n_t *)_CALLOC(1, sizeof(n2n_t));
     _CHECK_OOM(n2n);
     tcp->data = n2n;
@@ -344,10 +336,9 @@ n2n_t *init_n2n_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_p
     n2n->listen_addr = listen_sockaddr;
     n2n->target_addr = target_sockaddr;
     n2n->n2n_conns = NULL;
-    // n2n->timer = timer;
-
-    n2n->r_keepalive = keepalive;
-    n2n->w_keepalive = keepalive;
+    n2n->r_keepalive = def_keepalive;
+    n2n->w_keepalive = def_keepalive;
+    n2n->connect_timeout = def_connect_timeout;
 
     return n2n;
 }
@@ -356,11 +347,19 @@ void free_n2n_server(n2n_t *n2n) {
     if (!n2n) {
         return;
     }
-
     if (n2n->tcp) {
         stop_tcp_server(n2n->tcp);
         free_tcp(n2n->tcp);
     }
-
     free(n2n);
+}
+
+bool n2n_server_set_opts(n2n_t *n2n, int keepalive, uint64_t connect_timeout) {
+    if (!n2n) {
+        return false;
+    }
+    n2n->r_keepalive = keepalive;
+    n2n->w_keepalive = keepalive;
+    n2n->connect_timeout = connect_timeout;
+    return true;
 }
