@@ -63,7 +63,10 @@ static void free_ss5_conn(socks5_connection_t *conn) {
 }
 
 static void close_ss5_conn(tcp_t *tcp, int conn_id) {
-    IF_GET_TCP_CONN(tcp_conn, tcp, conn_id, { return; });
+    IF_GET_TCP_CONN(tcp_conn, tcp, conn_id, {
+        _LOG("close_ss5_conn does not exist %d", conn_id);
+        return;
+    });
     socks5_connection_t *ss5_conn = (socks5_connection_t *)tcp_conn->data;
     if (!ss5_conn) {
         _LOG("ss5_conn does not exist");
@@ -84,6 +87,7 @@ static void close_ss5_conn(tcp_t *tcp, int conn_id) {
 static bool ss5_req_ack(socks5_connection_t *ss5_conn, u_char type) {
     assert(ss5_conn);
     if (!ss5_conn->fr_conn) {
+        _LOG("ss5_req_ack fr_conn does not exist");
         return false;
     }
     u_char *ack_raw = (u_char *)_CALLOC(1, ss5_conn->raw_len);
@@ -91,9 +95,9 @@ static bool ss5_req_ack(socks5_connection_t *ss5_conn, u_char type) {
     memcpy(ack_raw, ss5_conn->raw, ss5_conn->raw_len);
     ack_raw[1] = type;
     bool rt = tcp_send(ss5_conn->socks5->tcp, ss5_conn->fr_conn->id, (const char *)ack_raw, ss5_conn->raw_len);
-    if (!rt) {
-        close_ss5_conn(ss5_conn->socks5->tcp, ss5_conn->fr_conn->id);
-    }
+    // if (!rt) {
+    //     close_ss5_conn(ss5_conn->socks5->tcp, ss5_conn->fr_conn->id);
+    // }
     _FREE_IF(ack_raw);
     return rt;
 }
@@ -124,6 +128,7 @@ void on_resolved(uv_getaddrinfo_t *req, int status, struct addrinfo *res) {
         if (!connect_tcp(socks5->tcp, ss5_conn->ip, ss5_conn->port, ss5_conn)) {
             // error
             ss5_req_ack(ss5_conn, SS5_REP_ERR);
+            close_ss5_conn(socks5->tcp, ss5_conn->fr_conn->id);
         }
     } else if (res->ai_family == AF_INET6) {
         // ipv6
@@ -213,7 +218,7 @@ ss5_auth_name_pwd_error:
 }
 
 static void on_back_connect(tcp_t *tcp, int conn_id) {
-    _LOG("back connect ok");
+    _LOG("back connect ok %d", conn_id);
     IF_GET_TCP_CONN(tcp_conn, tcp, conn_id, { return; });
     socks5_connection_t *ss5_conn = (socks5_connection_t *)tcp_conn->data;
     assert(ss5_conn);

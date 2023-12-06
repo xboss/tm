@@ -68,6 +68,7 @@ static void alloc_buffer(uv_handle_t *handle, size_t suggested_size, uv_buf_t *b
 }
 
 static void free_conn(tcp_connection_t *conn) {
+    _LOG("free tcp conn %d", conn->id);
     if (!conn) {
         return;
     }
@@ -433,7 +434,7 @@ tcp_connection_t *get_tcp_connection(tcp_t *tcp, int conn_id) {
     }
     if (uv_is_closing((uv_handle_t *)conn->cli)) {
         _LOG("closing...... when get tcp conn %d", conn_id);
-        return NULL;
+        // return NULL;
     }
     return conn;
 }

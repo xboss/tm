@@ -8,7 +8,8 @@
 
 // #define TCP_CONN_ST_OFF 0x00
 // #define TCP_CONN_ST_ON 0x01
-// #define TCP_CONN_ST_CLOSING 0x02
+// #define TCP_CONN_ST_CONNECTING 0x02
+// #define TCP_CONN_ST_CLOSING 0x03
 
 #define TCP_CONN_MODE_SERV 0x01
 #define TCP_CONN_MODE_CLI 0x02

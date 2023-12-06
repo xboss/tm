@@ -25,6 +25,8 @@ typedef struct {
     uv_timer_t *timer;
     uint64_t start_connect_tm;  // unit: millisecond
     int status;
+    uint64_t last_r_tm;
+    // uint64_t last_w_tm;
     UT_hash_handle hh;
 } n2n_conn_t;
 
