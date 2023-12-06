@@ -7,6 +7,11 @@
 #include "tcp.h"
 #include "uthash.h"
 
+#define N2N_CONN_ST_OFF 0
+#define N2N_CONN_ST_ON 1
+#define N2N_CONN_ST_CONNECTING 2
+#define N2N_CONN_ST_CLOSING 3
+
 typedef struct n2n_buf_s {
     char *buf;
     ssize_t size;
@@ -19,6 +24,7 @@ typedef struct {
     n2n_buf_t *n2n_buf_list;
     uv_timer_t *timer;
     uint64_t start_connect_tm;  // unit: millisecond
+    int status;
     UT_hash_handle hh;
 } n2n_conn_t;
 

@@ -49,10 +49,12 @@ typedef struct {
 } resolver_req_t;
 
 static void free_ss5_conn(socks5_connection_t *conn) {
+    _LOG("free_ss5_conn");
     assert(conn);
-    if (!conn) {
-        return;
-    }
+    assert(!conn->fr_conn && !conn->bk_conn);
+    // if (!conn) {
+    //     return;
+    // }
     conn->phase = -9999;  // TODO: test
     if (conn->raw) {
         _FREE_IF(conn->raw);
@@ -69,13 +71,13 @@ static void close_ss5_conn(tcp_t *tcp, int conn_id) {
     }
     if (ss5_conn->fr_conn) {
         close_tcp_connection(ss5_conn->socks5->tcp, ss5_conn->fr_conn->id);
-        ss5_conn->fr_conn->data = NULL;
-        ss5_conn->fr_conn = NULL;
+        // ss5_conn->fr_conn->data = NULL;
+        // ss5_conn->fr_conn = NULL;
     }
     if (ss5_conn->bk_conn) {
         close_tcp_connection(ss5_conn->socks5->tcp, ss5_conn->bk_conn->id);
-        ss5_conn->bk_conn->data = NULL;
-        ss5_conn->bk_conn = NULL;
+        // ss5_conn->bk_conn->data = NULL;
+        // ss5_conn->bk_conn = NULL;
     }
 }
 
@@ -351,16 +353,36 @@ static void on_tcp_close(tcp_t *tcp, int conn_id) {
 
     assert(ss5_conn);
     // close_ss5_conn(tcp, conn_id);
-    if (ss5_conn->fr_conn && ss5_conn->fr_conn->id != conn_id) {
-        close_tcp_connection(ss5_conn->socks5->tcp, ss5_conn->fr_conn->id);
-        ss5_conn->fr_conn->data = NULL;
-        ss5_conn->fr_conn = NULL;
+    if (ss5_conn->fr_conn) {
+        if (ss5_conn->fr_conn->id != conn_id) {
+            close_tcp_connection(ss5_conn->socks5->tcp, ss5_conn->fr_conn->id);
+        } else {
+            ss5_conn->fr_conn->data = NULL;
+            ss5_conn->fr_conn = NULL;
+        }
     }
-    if (ss5_conn->bk_conn && ss5_conn->bk_conn->id != conn_id) {
-        close_tcp_connection(ss5_conn->socks5->tcp, ss5_conn->bk_conn->id);
-        ss5_conn->bk_conn->data = NULL;
-        ss5_conn->bk_conn = NULL;
+    if (ss5_conn->bk_conn) {
+        if (ss5_conn->bk_conn->id != conn_id) {
+            close_tcp_connection(ss5_conn->socks5->tcp, ss5_conn->bk_conn->id);
+        } else {
+            ss5_conn->bk_conn->data = NULL;
+            ss5_conn->bk_conn = NULL;
+        }
     }
+
+    // if (ss5_conn->fr_conn && ss5_conn->fr_conn->id != conn_id) {
+    //     close_tcp_connection(ss5_conn->socks5->tcp, ss5_conn->fr_conn->id);
+    // } else {
+    //     ss5_conn->fr_conn->data = NULL;
+    //     ss5_conn->fr_conn = NULL;
+    // }
+    // if (ss5_conn->bk_conn && ss5_conn->bk_conn->id != conn_id) {
+    //     close_tcp_connection(ss5_conn->socks5->tcp, ss5_conn->bk_conn->id);
+    // } else {
+    //     ss5_conn->bk_conn->data = NULL;
+    //     ss5_conn->bk_conn = NULL;
+    // }
+
     if (!ss5_conn->fr_conn && !ss5_conn->bk_conn) {
         free_ss5_conn(ss5_conn);
     }

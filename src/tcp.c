@@ -256,10 +256,11 @@ void close_tcp_connection(tcp_t *tcp, int conn_id) {
     if (!tcp || !tcp->conns || conn_id <= 0) {
         return;
     }
-    tcp_connection_t *conn = get_conn(tcp, conn_id);
-    if (!conn) {
-        return;
-    }
+    // tcp_connection_t *conn = get_conn(tcp, conn_id);
+    // if (!conn) {
+    //     return;
+    // }
+    IF_GET_TCP_CONN(conn, tcp, conn_id, { return; });
 
     assert(conn->cli);
 
