@@ -42,6 +42,7 @@ struct n2n_conn_s {
     int status;
     uint64_t last_r_tm;
     // uint64_t last_w_tm;
+    void *data;
     UT_hash_handle hh;
 };
 
@@ -54,6 +55,7 @@ struct n2n_s {
     int r_keepalive;           // unit: second
     int w_keepalive;           // unit: second
     uint64_t connect_timeout;  // unit: millisecond
+    void *data;
 
     char *key;
     char *iv;
@@ -75,5 +77,6 @@ int n2n_connect_backend(n2n_t *n2n, struct sockaddr_in sockaddr, int couple_id, 
 bool n2n_send_to_front(n2n_t *n2n, int conn_id, const char *buf, ssize_t size);
 bool n2n_send_to_back(n2n_t *n2n, int conn_id, const char *buf, ssize_t size);
 n2n_conn_t *n2n_get_conn(n2n_t *n2n, int conn_id);
+void n2n_close_conn(n2n_t *n2n, int conn_id);
 
 #endif  // N2N_SERVER_H
