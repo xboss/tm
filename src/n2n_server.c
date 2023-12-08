@@ -3,11 +3,94 @@
 #include "utils.h"
 #include "utlist.h"
 
-typedef struct {
-    uv_timer_t timer;
-    int conn_id;
-    int couple_id;
-} timer_req_t;
+void on_conn_timer_close(uv_handle_t *handle);
+static void on_conn_timer(uv_timer_t *handle);
+
+/* -------------------------------------------------------------------------- */
+/*                                n2n protocol                                */
+/* -------------------------------------------------------------------------- */
+
+#define N2N_MSG_HEAD_LEN 4
+#define N2N_MSG_CMD_DATA 0x00U
+#define N2N_MSG_CMD_AUTH 0x01U
+
+// #define N2N_MSG_ST_PENDING 0x00
+// #define N2N_MSG_ST_FIN 0x01
+
+/*
+format: remain_length(4B)payload(nB)
+*/
+// struct n2n_msg_s {
+//     uint32_t len;
+//     u_char cmd;
+//     uint32_t payload_len;
+//     // struct n2n_msg_s *next, *prev;
+//     char payload[];
+// };
+
+// UT_icd n2n_msg_icd = {sizeof(n2n_msg_t *), NULL, NULL, NULL};
+
+void on_read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *conn) {}
+
+#define PROCESS_N2N_MSG                          \
+    msg_len = ntohl(*(uint32_t *)(p));           \
+    while (rlen >= N2N_MSG_HEAD_LEN + msg_len) { \
+        p += N2N_MSG_HEAD_LEN;                   \
+        on_read_n2n_msg(p, msg_len, conn);       \
+        rlen -= msg_len;                         \
+        p += msg_len;                            \
+        if (rlen < N2N_MSG_HEAD_LEN) {           \
+            break;                               \
+        }                                        \
+        msg_len = ntohl(*(uint32_t *)(p));       \
+        if (rlen < N2N_MSG_HEAD_LEN + msg_len) { \
+            break;                               \
+        }                                        \
+    }                                            \
+    if (rlen == 0) {                             \
+        return 0;                                \
+    }                                            \
+    _FREE_IF(conn->msg_buf);                     \
+    conn->msg_buf = (char *)_CALLOC(1, rlen);    \
+    conn->msg_read_len = rlen;                   \
+    return 0
+
+static int read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *conn) {
+    assert(conn);
+    uint32_t msg_len = 0;
+    uint32_t rlen = len;
+    const char *p = buf;
+    if (len < 0) {
+        // error
+        return -1;
+    }
+    if (conn->msg_buf == NULL) {
+        // the new msg
+        if (len < N2N_MSG_HEAD_LEN) {
+            // error
+            return -1;
+        }
+        PROCESS_N2N_MSG;
+    }
+    if (conn->msg_buf != NULL) {
+        // remain msg
+        assert(conn->msg_read_len != 0);
+        if (conn->msg_read_len + rlen < N2N_MSG_HEAD_LEN) {
+            // still remain
+            conn->msg_buf = (char *)realloc(conn->msg_buf, conn->msg_read_len + rlen);
+            _CHECK_OOM(conn->msg_buf);
+            memcpy(conn->msg_buf + rlen, p, rlen);
+            return 0;
+        }
+
+        char *tmp_buf = (char *)_CALLOC(1, conn->msg_read_len + rlen);
+        _CHECK_OOM(tmp_buf);
+        memcpy(tmp_buf, conn->msg_buf, conn->msg_read_len);
+        memcpy(tmp_buf + conn->msg_read_len, p, rlen);
+        PROCESS_N2N_MSG;
+    }
+    return -1;
+}
 
 /* -------------------------------------------------------------------------- */
 /*                             connection manager                             */
@@ -37,27 +120,6 @@ static void del_conn(n2n_t *n2n, n2n_conn_t *conn) {
     HASH_DEL(n2n->n2n_conns, conn);
 }
 
-void on_conn_timer_close(uv_handle_t *handle) {
-    _LOG("on_conn_timer_close...");
-    n2n_t *n2n = (n2n_t *)handle->data;
-    timer_req_t *timer_req = (timer_req_t *)handle;
-    int conn_id = timer_req->conn_id;
-    IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, { _LOG("on_conn_timer_close n2n_conn does not exist %d", conn_id); });
-    if (n2n_conn) {
-        n2n_close_conn(n2n, conn_id);
-        assert(n2n_conn->timer);
-        _FREE_IF(n2n_conn->timer);
-    } else {
-        _FREE_IF(handle);
-    }
-    // assert(n2n_conn);
-    // if (n2n_conn->timer) {
-    //     _FREE_IF(n2n_conn->timer);
-    // }
-    // n2n_close_conn(n2n, conn_id);
-    // _FREE_IF(handle);
-}
-
 static void free_conn(n2n_t *n2n, n2n_conn_t *conn) {
     _LOG("free n2n conn");
     if (!conn) {
@@ -71,7 +133,6 @@ static void free_conn(n2n_t *n2n, n2n_conn_t *conn) {
         if (!uv_is_closing((uv_handle_t *)conn->timer)) {
             uv_close((uv_handle_t *)conn->timer, on_conn_timer_close);
         }
-        // conn->timer = NULL;
     }
 
     if (conn->n2n_buf_list) {
@@ -86,6 +147,71 @@ static void free_conn(n2n_t *n2n, n2n_conn_t *conn) {
         conn->n2n_buf_list = NULL;
     }
     _FREE_IF(conn);
+}
+
+static n2n_conn_t *new_conn(n2n_t *n2n, int conn_id, int couple_id) {
+    n2n_conn_t *n2n_conn = (n2n_conn_t *)_CALLOC(1, sizeof(n2n_conn_t));
+    _CHECK_OOM(n2n_conn);
+    n2n_conn->conn_id = conn_id;
+    n2n_conn->couple_id = couple_id;
+    n2n_conn->n2n_buf_list = NULL;
+    n2n_conn->timer = NULL;
+    uint64_t now = mstime();
+    n2n_conn->start_connect_tm = n2n_conn->last_r_tm = now;
+    n2n_conn->status = N2N_CONN_ST_OFF;
+    add_conn(n2n, n2n_conn);
+    return n2n_conn;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                    timer                                   */
+/* -------------------------------------------------------------------------- */
+
+typedef struct {
+    uv_timer_t timer;
+    int conn_id;
+    int couple_id;
+} timer_req_t;
+
+static bool start_conn_timer(n2n_t *n2n, n2n_conn_t *n2n_conn) {
+    assert(n2n_conn->status == N2N_CONN_ST_ON);
+
+    timer_req_t *timer_req = (timer_req_t *)_CALLOC(1, sizeof(timer_req_t));
+    _CHECK_OOM(timer_req)
+    int r = uv_timer_init(n2n->loop, (uv_timer_t *)timer_req);
+    IF_UV_ERROR(r, "n2n conn timer init error", {
+        _FREE_IF(timer_req);
+        return false;
+    });
+    timer_req->timer.data = n2n;
+    timer_req->conn_id = n2n_conn->conn_id;
+    timer_req->couple_id = n2n_conn->couple_id;
+    r = uv_timer_start((uv_timer_t *)timer_req, on_conn_timer, 0, 1 * 1000);
+    IF_UV_ERROR(r, "n2n conn timer start error", {
+        _FREE_IF(timer_req);
+        return false;
+    });
+    n2n_conn->timer = (uv_timer_t *)timer_req;
+    return true;
+}
+
+/* -------------------------------------------------------------------------- */
+/*                                  callback                                  */
+/* -------------------------------------------------------------------------- */
+
+void on_conn_timer_close(uv_handle_t *handle) {
+    _LOG("on_conn_timer_close...");
+    n2n_t *n2n = (n2n_t *)handle->data;
+    timer_req_t *timer_req = (timer_req_t *)handle;
+    int conn_id = timer_req->conn_id;
+    IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, { _LOG("on_conn_timer_close n2n_conn does not exist %d", conn_id); });
+    if (n2n_conn) {
+        n2n_close_conn(n2n, conn_id);
+        assert(n2n_conn->timer);
+        _FREE_IF(n2n_conn->timer);
+    } else {
+        _FREE_IF(handle);
+    }
 }
 
 static void on_conn_timer(uv_timer_t *handle) {
@@ -103,7 +229,6 @@ static void on_conn_timer(uv_timer_t *handle) {
         goto on_conn_timer_timout;
     }
 
-    // IF_GET_TCP_CONN(tcp_conn, n2n->tcp, conn_id, {});
     if (n2n_conn && (now - n2n_conn->last_r_tm) > n2n->r_keepalive * 1000L) {
         _LOG("on_conn_timer read timeout %llu", now - n2n_conn->last_r_tm);
         goto on_conn_timer_timout;
@@ -119,81 +244,10 @@ on_conn_timer_timout:
     }
 }
 
-static bool start_conn_timer(n2n_t *n2n, n2n_conn_t *n2n_conn) {
-    assert(n2n_conn->status == N2N_CONN_ST_ON);
-
-    timer_req_t *timer_req = (timer_req_t *)_CALLOC(1, sizeof(timer_req_t));
-    _CHECK_OOM(timer_req)
-    int r = uv_timer_init(n2n->loop, (uv_timer_t *)timer_req);
-    IF_UV_ERROR(r, "n2n conn timer init error", {
-        _FREE_IF(timer_req);
-        // free_conn(n2n, n2n_conn);
-        // return NULL;
-        return false;
-    });
-    timer_req->timer.data = n2n;
-    timer_req->conn_id = n2n_conn->conn_id;
-    timer_req->couple_id = n2n_conn->couple_id;
-    r = uv_timer_start((uv_timer_t *)timer_req, on_conn_timer, 0, 1 * 1000);
-    IF_UV_ERROR(r, "n2n conn timer start error", {
-        _FREE_IF(timer_req);
-        // free_conn(n2n, n2n_conn);
-        // return NULL;
-        return false;
-    });
-    n2n_conn->timer = (uv_timer_t *)timer_req;
-    return true;
-}
-
-static n2n_conn_t *new_conn(n2n_t *n2n, int conn_id, int couple_id) {
-    n2n_conn_t *n2n_conn = (n2n_conn_t *)_CALLOC(1, sizeof(n2n_conn_t));
-    _CHECK_OOM(n2n_conn);
-    n2n_conn->conn_id = conn_id;
-    n2n_conn->couple_id = couple_id;
-    n2n_conn->n2n_buf_list = NULL;
-    n2n_conn->timer = NULL;
-    uint64_t now = mstime();
-    n2n_conn->start_connect_tm = n2n_conn->last_r_tm = now;
-    n2n_conn->status = N2N_CONN_ST_OFF;
-    add_conn(n2n, n2n_conn);
-    return n2n_conn;
-}
-
-// static bool if_send_to_buf(n2n_conn_t *n2n_conn, const char *buf, ssize_t size) {
-//     assert(n2n_conn);
-//     assert(buf);
-//     assert(size > 0);
-//     if (n2n_conn->status == N2N_CONN_ST_CONNECTING) {
-//         // maybe backend connection does not create
-//         n2n_buf_t *n2n_buf = (n2n_buf_t *)_CALLOC(1, sizeof(n2n_buf_t));
-//         _CHECK_OOM(n2n_buf);
-//         n2n_buf->buf = (char *)_CALLOC(1, size);
-//         _CHECK_OOM(n2n_buf->buf);
-//         memcpy(n2n_buf->buf, buf, size);
-//         n2n_buf->size = size;
-//         DL_APPEND(n2n_conn->n2n_buf_list, n2n_buf);
-//         n2n_conn->last_r_tm = mstime();
-//         return true;
-//     }
-//     return false;
-// }
-
-/* -------------------------------------------------------------------------- */
-/*                                  callback                                  */
-/* -------------------------------------------------------------------------- */
-
 static void on_front_accept(tcp_t *tcp, int conn_id) {
     _LOG("on front accept %d", conn_id);
     n2n_t *n2n = (n2n_t *)tcp->data;
     assert(n2n);
-
-    // connect to backend
-    // int couple_id = connect_tcp_with_sockaddr(tcp, n2n->target_addr, NULL);
-    // if (couple_id <= 0) {
-    //     // error
-    //     n2n_close_conn(n2n, conn_id);
-    // }
-
     int couple_id = 0;
     n2n_conn_t *n2n_conn = new_conn(n2n, conn_id, couple_id);
     n2n_conn->status = N2N_CONN_ST_ON;
@@ -204,18 +258,16 @@ static void on_front_accept(tcp_t *tcp, int conn_id) {
 
     if (n2n->on_n2n_front_accept) {
         n2n->on_n2n_front_accept(n2n, conn_id);
-    } else {
-        couple_id = n2n_connect_backend(n2n, n2n->target_addr, conn_id, NULL);
-        if (couple_id <= 0) {
-            // error
-            n2n_close_conn(n2n, conn_id);
-            return;
-        }
-        n2n_conn->couple_id = couple_id;
     }
-
-    // n2n_conn_t *couple_n2n_conn = new_conn(n2n, couple_id, conn_id);
-    // couple_n2n_conn->status = N2N_CONN_ST_CONNECTING;
+    // else {
+    //     couple_id = n2n_connect_backend(n2n, n2n->target_addr, conn_id, NULL);
+    //     if (couple_id <= 0) {
+    //         // error
+    //         n2n_close_conn(n2n, conn_id);
+    //         return;
+    //     }
+    //     n2n_conn->couple_id = couple_id;
+    // }
 }
 
 static void on_tcp_close(tcp_t *tcp, int conn_id) {
@@ -250,16 +302,18 @@ static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) 
         // front
         if (n2n->on_n2n_front_recv) {
             n2n->on_n2n_front_recv(n2n, conn_id, buf, size);
-        } else {
-            n2n_send_to_back(n2n, n2n_conn->couple_id, buf, size);
         }
+        // else {
+        //     n2n_send_to_back(n2n, n2n_conn->couple_id, buf, size);
+        // }
     } else {
         // backend
         if (n2n->on_n2n_backend_recv) {
             n2n->on_n2n_backend_recv(n2n, conn_id, buf, size);
-        } else {
-            n2n_send_to_front(n2n, n2n_conn->couple_id, buf, size);
         }
+        // else {
+        //     n2n_send_to_front(n2n, n2n_conn->couple_id, buf, size);
+        // }
     }
 
     n2n_conn->last_r_tm = mstime();
@@ -287,30 +341,12 @@ static void on_backend_connect(tcp_t *tcp, int conn_id) {
 
     if (n2n->on_n2n_backend_connect) {
         n2n->on_n2n_backend_connect(n2n, conn_id);
-    } else {
-        if (!n2n_send_to_back(n2n, conn_id, NULL, 0)) {
-            n2n_close_conn(n2n, conn_id);
-            return;
-        }
     }
-
-    // // check buf and send
-    // if (n2n_couple_conn->n2n_buf_list) {
-    //     _LOG("backend connect couple send %d from %d", couple_id, conn_id);
-    //     n2n_buf_t *item, *tmp;
-    //     DL_FOREACH_SAFE(n2n_couple_conn->n2n_buf_list, item, tmp) {
-    //         DL_DELETE(n2n_couple_conn->n2n_buf_list, item);
-    //         if (item->buf) {
-    //             int rt = tcp_send(tcp, conn_id, item->buf, item->size);
-    //             if (!rt) {
-    //                 n2n_close_conn(n2n, conn_id);
-    //                 return;
-    //             }
-    //             _FREE_IF(item->buf);
-    //         }
-    //         _FREE_IF(item);
+    // else {
+    //     if (!n2n_send_to_back(n2n, conn_id, NULL, 0)) {
+    //         n2n_close_conn(n2n, conn_id);
+    //         return;
     //     }
-    //     n2n_conn->n2n_buf_list = NULL;
     // }
 }
 

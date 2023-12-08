@@ -5,6 +5,7 @@
 #include <uv.h>
 
 #include "tcp.h"
+// #include "utarray.h"
 #include "uthash.h"
 
 #define N2N_CONN_ST_OFF 0
@@ -20,6 +21,7 @@
 
 typedef struct n2n_conn_s n2n_conn_t;
 typedef struct n2n_s n2n_t;
+// typedef struct n2n_msg_s n2n_msg_t;
 
 typedef void (*on_n2n_front_accept_t)(n2n_t *n2n, int conn_id);
 typedef void (*on_n2n_close_t)(n2n_t *n2n, int conn_id);
@@ -37,12 +39,18 @@ struct n2n_conn_s {
     int conn_id;
     int couple_id;
     n2n_buf_t *n2n_buf_list;
+    // UT_array *msg_arr;
+    // bool is_msg_pending;
     uv_timer_t *timer;
     uint64_t start_connect_tm;  // unit: millisecond
     int status;
     uint64_t last_r_tm;
     // uint64_t last_w_tm;
     void *data;
+
+    u_int32_t msg_read_len;
+    char *msg_buf;
+
     UT_hash_handle hh;
 };
 
