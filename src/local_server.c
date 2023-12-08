@@ -12,14 +12,14 @@ struct local_server_s {
 char iv[CIPHER_IV_LEN + 1] = "3bc678def1123de452789a8907bcf90a";
 
 static inline bool send_to_back(local_server_t *local, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
-    if (local->key) {
-        int msg_len = 0;
-        char *msg_buf = n2n_pack_msg(buf, size, &msg_len);
-        bool rt = n2n_send_to_back(n2n, conn_id, msg_buf, msg_len);
-        _FREE_IF(msg_buf);
-        return rt;
-    }
-    return n2n_send_to_back(n2n, conn_id, buf, size);
+    // if (local->key) {
+    // }
+    // return n2n_send_to_back(n2n, conn_id, buf, size);
+    int msg_len = 0;
+    char *msg_buf = n2n_pack_msg(buf, size, &msg_len);
+    bool rt = n2n_send_to_back(n2n, conn_id, msg_buf, msg_len);
+    _FREE_IF(msg_buf);
+    return rt;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -67,9 +67,10 @@ void on_n2n_backend_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size)
     GET_LOCAL_INFO;
 
     int rt = n2n_read_msg(buf, size, n2n_conn, on_read_n2n_msg);
+    // _ERR("msg_read_len: %u", n2n_conn->msg_read_len);
     if (rt < 0) {
         // error
-        _LOG("msg format error %d", conn_id);
+        _ERR("msg format error %d", conn_id);
         return;
     }
 }

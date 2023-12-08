@@ -37,6 +37,20 @@
     } while (0)
 #endif
 
+// #ifndef _LOG
+// #define _LOG(fmt, args...) \
+//     do {                   \
+//     } while (0)
+// #endif
+
+#ifndef _ERR
+#define _ERR(fmt, args...)            \
+    do {                              \
+        fprintf(stderr, fmt, ##args); \
+        printf("\n");                 \
+    } while (0)
+#endif
+
 #define IF_UV_ERROR(_r, _msg, _act)                           \
     if ((_r) < 0) {                                           \
         fprintf(stderr, "" #_msg " %s\n", uv_strerror((_r))); \

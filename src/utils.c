@@ -35,7 +35,7 @@ void pwd2key(const char *pwd, char **key) {
 char *load_str_file(const char *filename) {
     FILE *fp;
     if ((fp = fopen(filename, "r")) == NULL) {
-        fprintf(stderr, "can't open file %s\n", filename);
+        _ERR("can't open file %s", filename);
         return NULL;
     }
 

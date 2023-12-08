@@ -83,33 +83,34 @@ static void free_ss5_conn(socks5_conn_t *conn) {
 }
 
 static inline bool send_to_front(socks5_server_t *socks5, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
-    if (socks5->key) {
-        int msg_len = 0;
-        char *msg_buf = n2n_pack_msg(buf, size, &msg_len);
-        bool rt = n2n_send_to_front(n2n, conn_id, msg_buf, msg_len);
-        _FREE_IF(msg_buf);
-        return rt;
-    }
-    return n2n_send_to_front(n2n, conn_id, buf, size);
+    // if (socks5->key) {
+
+    // }
+    // return n2n_send_to_front(n2n, conn_id, buf, size);
+    int msg_len = 0;
+    char *msg_buf = n2n_pack_msg(buf, size, &msg_len);
+    bool rt = n2n_send_to_front(n2n, conn_id, msg_buf, msg_len);
+    _FREE_IF(msg_buf);
+    return rt;
 }
 
 static bool ss5_req_ack(socks5_server_t *socks5, int conn_id, u_char type, u_char *raw, ssize_t raw_len, n2n_t *n2n) {
-    printf("raw:\n");
-    for (size_t i = 0; i < raw_len; i++) {
-        printf("%X ", raw[i]);
-    }
-    printf("\n");
+    // printf("raw:\n");
+    // for (size_t i = 0; i < raw_len; i++) {
+    //     printf("%X ", raw[i]);
+    // }
+    // printf("\n");
 
     u_char *ack_raw = (u_char *)_CALLOC(1, raw_len);
     _CHECK_OOM(ack_raw);
     memcpy(ack_raw, raw, raw_len);
     ack_raw[1] = type;
 
-    printf("ack_raw:\n");
-    for (size_t i = 0; i < raw_len; i++) {
-        printf("%X ", ack_raw[i]);
-    }
-    printf("\n");
+    // printf("ack_raw:\n");
+    // for (size_t i = 0; i < raw_len; i++) {
+    //     printf("%X ", ack_raw[i]);
+    // }
+    // printf("\n");
 
     bool rt = send_to_front(socks5, n2n, conn_id, (const char *)ack_raw, raw_len);
     if (!rt) {
@@ -193,7 +194,7 @@ static void ss5_auth(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     PREPARE_SS5_INFO;
 
     if (*buf != SS5_VER || size < 3) {
-        fprintf(stderr, "socks5 auth error %d %c %ld\n", n2n_conn->conn_id, *buf, size);
+        _ERR("socks5 auth error %d %c %ld", n2n_conn->conn_id, *buf, size);
         n2n_close_conn(n2n, n2n_conn->conn_id);
         return;
     }
@@ -225,7 +226,7 @@ static void ss5_auth_np(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     PREPARE_SS5_INFO;
 
     if (*buf != SS5_VER || size < 5) {
-        fprintf(stderr, "socks5 auth name password error\n");
+        _ERR("socks5 auth name password error");
         n2n_close_conn(n2n, n2n_conn->conn_id);
         return;
     }
@@ -240,7 +241,7 @@ static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     PREPARE_SS5_INFO;
 
     if (*buf != SS5_VER || size < 7) {
-        fprintf(stderr, "socks5 request error version\n");
+        _ERR("socks5 request error version");
         return;
         // goto ss5_auth_req_error;
     }
@@ -252,7 +253,7 @@ static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
         return;
     }
     if (cmd != SS5_CMD_CONNECT) {
-        fprintf(stderr, "socks5 request error cmd\n");
+        _ERR("socks5 request error cmd");
         return;
     }
 
@@ -271,7 +272,7 @@ static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
         if (bk_id <= 0) {
             free_ss5_conn(new_ss5_conn);
             ss5_req_ack(socks5, n2n_conn->conn_id, SS5_REP_ERR, ss5_conn->raw, ss5_conn->raw_len, n2n);
-            fprintf(stderr, "socks5 request error connect backend\n");
+            _ERR("socks5 request error connect backend");
             return;
         }
     } else if (atyp == SS5_ATYP_IPV6) {
@@ -297,12 +298,12 @@ static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
         if (!resolve_domain(socks5->loop, n2n_conn, domain, AF_INET)) {
             _FREE_IF(domain);
             ss5_req_ack(socks5, n2n_conn->conn_id, SS5_REP_HOST_ERR, ss5_conn->raw, ss5_conn->raw_len, n2n);
-            fprintf(stderr, "socks5 request error resolve domain\n");
+            _ERR("socks5 request error resolve domain");
             return;
         }
         _FREE_IF(domain);
     } else {
-        fprintf(stderr, "socks5 request error atyp\n");
+        _ERR("socks5 request error atyp");
         return;
     }
 }

@@ -63,6 +63,7 @@ static void free_write_req(uv_write_t *req) {
 }
 
 static void alloc_buffer(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
+    // suggested_size = 1024;  // TODO:
     buf->base = (char *)_CALLOC(1, suggested_size);
     buf->len = suggested_size;
 }
@@ -159,7 +160,7 @@ static void on_tcp_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
         conn->last_r_tm = mstime();
     }
     if (nread < 0) {
-        if (nread != UV_EOF) fprintf(stderr, "tcp read error %s\n", uv_err_name(nread));
+        if (nread != UV_EOF) _ERR("tcp read error %s", uv_err_name(nread));
         close_tcp_connection(tcp, conn->id);
     }
 
@@ -237,7 +238,7 @@ static void on_tcp_accept(uv_stream_t *server, int status) {
     });
     tcp_connection_t *conn = init_conn(gen_conn_id(tcp), cli, tcp, TCP_CONN_MODE_SERV, NULL);
     if (!conn) {
-        fprintf(stderr, "init tcp connection error");
+        _ERR("init tcp connection error");
         close_conn(cli);
         return;
     }
