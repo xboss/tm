@@ -1,11 +1,26 @@
 #include "local_server.h"
 
+#include "cipher.h"
 #include "utils.h"
 
 struct local_server_s {
     uv_loop_t *loop;
     n2n_t *n2n;
+    char *key;
 };
+
+char iv[CIPHER_IV_LEN + 1] = "3bc678def1123de452789a8907bcf90a";
+
+static inline bool send_to_back(local_server_t *local, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
+    if (local->key) {
+        int msg_len = 0;
+        char *msg_buf = n2n_pack_msg(buf, size, &msg_len);
+        bool rt = n2n_send_to_back(n2n, conn_id, msg_buf, msg_len);
+        _FREE_IF(msg_buf);
+        return rt;
+    }
+    return n2n_send_to_back(n2n, conn_id, buf, size);
+}
 
 /* -------------------------------------------------------------------------- */
 /*                                  callback                                  */
@@ -36,22 +51,33 @@ void on_n2n_close(n2n_t *n2n, int conn_id) {
     // free_ss5_conn(ss5_conn);
 }
 
+void on_read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *n2n_conn) {
+    IF_GET_N2N_CONN(test_conn, n2n_conn->n2n, n2n_conn->conn_id, { assert(0); });  // TODO: for test
+    n2n_send_to_front(n2n_conn->n2n, n2n_conn->couple_id, buf, len);
+}
+
 void on_n2n_front_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
     _LOG("on_n2n_front_recv %d", conn_id);
     GET_LOCAL_INFO;
-    n2n_send_to_back(n2n, n2n_conn->couple_id, buf, size);
+    send_to_back(local, n2n, n2n_conn->couple_id, buf, size);
 }
 
 void on_n2n_backend_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
     _LOG("on_n2n_backend_recv %d", conn_id);
     GET_LOCAL_INFO;
-    n2n_send_to_front(n2n, n2n_conn->couple_id, buf, size);
+
+    int rt = n2n_read_msg(buf, size, n2n_conn, on_read_n2n_msg);
+    if (rt < 0) {
+        // error
+        _LOG("msg format error %d", conn_id);
+        return;
+    }
 }
 
 void on_n2n_backend_connect(n2n_t *n2n, int conn_id) {
     _LOG("on_n2n_backend_connect %d", conn_id);
     GET_LOCAL_INFO;
-    if (!n2n_send_to_back(n2n, conn_id, NULL, 0)) {
+    if (!send_to_back(local, n2n, conn_id, NULL, 0)) {
         n2n_close_conn(n2n, conn_id);
         return;
     }
@@ -63,7 +89,7 @@ void on_n2n_backend_connect(n2n_t *n2n, int conn_id) {
 /* -------------------------------------------------------------------------- */
 
 local_server_t *init_local_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_port, const char *target_ip,
-                                  uint16_t target_port) {
+                                  uint16_t target_port, const char *pwd) {
     if (!loop || !listen_ip || listen_port <= 0 || !target_ip || target_port <= 0) {
         return NULL;
     }
@@ -77,6 +103,12 @@ local_server_t *init_local_server(uv_loop_t *loop, const char *listen_ip, uint16
     n2n->data = local;
     local->loop = loop;
     local->n2n = n2n;
+
+    if (pwd) {
+        pwd2key(pwd, &local->key);
+        _LOG("start cipher mode %s", local->key);
+    }
+
     return local;
 }
 
@@ -89,5 +121,9 @@ void free_local_server(local_server_t *local) {
         n2n_free_server(local->n2n);  // TODO:
     }
 
-    free(local);
+    if (local->key) {
+        _FREE_IF(local->key);
+    }
+
+    _FREE_IF(local);
 }

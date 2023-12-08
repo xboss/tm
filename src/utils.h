@@ -43,11 +43,13 @@
         { _act }                                              \
     }
 
-#define IV_LEN 32
-#define KEY_LEN 32
+#define CIPHER_KEY_LEN 32
+#define CIPHER_IV_LEN 32
 
 uint64_t ustime();
 uint64_t mstime();
+void char_to_hex(const char *src, int len, char *des);
+void pwd2key(const char *pwd, char **key);
 char *load_str_file(const char *filename);
 
 #endif  // UTILS_H

@@ -16,7 +16,7 @@ typedef struct {
     struct sockaddr_in target_addr;
 } socks5_conn_t;
 
-socks5_server_t *init_socks5_server(uv_loop_t *loop, const char *ip, uint16_t port);
+socks5_server_t *init_socks5_server(uv_loop_t *loop, const char *ip, uint16_t port, const char *pwd);
 void free_socks5_server(socks5_server_t *socks5);
 
 #endif  // SOCKS5_SERVER_H

@@ -10,54 +10,39 @@ static void on_conn_timer(uv_timer_t *handle);
 /*                                n2n protocol                                */
 /* -------------------------------------------------------------------------- */
 
-#define N2N_MSG_HEAD_LEN 4
-#define N2N_MSG_CMD_DATA 0x00U
-#define N2N_MSG_CMD_AUTH 0x01U
+// #define N2N_MSG_CMD_DATA 0x00U
+// #define N2N_MSG_CMD_AUTH 0x01U
 
-// #define N2N_MSG_ST_PENDING 0x00
-// #define N2N_MSG_ST_FIN 0x01
+// static void on_read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *conn) {}
+typedef void (*on_read_n2n_msg_t)(const char *buf, ssize_t len, n2n_conn_t *conn);
 
-/*
-format: remain_length(4B)payload(nB)
-*/
-// struct n2n_msg_s {
-//     uint32_t len;
-//     u_char cmd;
-//     uint32_t payload_len;
-//     // struct n2n_msg_s *next, *prev;
-//     char payload[];
-// };
-
-// UT_icd n2n_msg_icd = {sizeof(n2n_msg_t *), NULL, NULL, NULL};
-
-void on_read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *conn) {}
-
-#define PROCESS_N2N_MSG                          \
-    msg_len = ntohl(*(uint32_t *)(p));           \
-    while (rlen >= N2N_MSG_HEAD_LEN + msg_len) { \
-        p += N2N_MSG_HEAD_LEN;                   \
-        on_read_n2n_msg(p, msg_len, conn);       \
-        rlen -= msg_len;                         \
-        p += msg_len;                            \
-        if (rlen < N2N_MSG_HEAD_LEN) {           \
-            break;                               \
-        }                                        \
-        msg_len = ntohl(*(uint32_t *)(p));       \
-        if (rlen < N2N_MSG_HEAD_LEN + msg_len) { \
-            break;                               \
-        }                                        \
-    }                                            \
-    if (rlen == 0) {                             \
-        return 0;                                \
-    }                                            \
-    _FREE_IF(conn->msg_buf);                     \
-    conn->msg_buf = (char *)_CALLOC(1, rlen);    \
-    conn->msg_read_len = rlen;                   \
+#define PROCESS_N2N_MSG                               \
+    payload_len = ntohl(*(uint32_t *)(p));            \
+    while (rlen >= N2N_MSG_HEAD_LEN + payload_len) {  \
+        p += N2N_MSG_HEAD_LEN;                        \
+        on_read_n2n_msg(p, payload_len, conn);        \
+        rlen = rlen - payload_len - N2N_MSG_HEAD_LEN; \
+        p += payload_len;                             \
+        if (rlen <= N2N_MSG_HEAD_LEN) {               \
+            break;                                    \
+        }                                             \
+        payload_len = ntohl(*(uint32_t *)(p));        \
+        if (rlen < N2N_MSG_HEAD_LEN + payload_len) {  \
+            break;                                    \
+        }                                             \
+    }                                                 \
+    if (rlen == 0) {                                  \
+        return 0;                                     \
+    }                                                 \
+    _FREE_IF(conn->msg_buf);                          \
+    conn->msg_buf = (char *)_CALLOC(1, rlen);         \
+    memcpy(conn->msg_buf, p, rlen);                   \
+    conn->msg_read_len = rlen;                        \
     return 0
 
-static int read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *conn) {
+int n2n_read_msg(const char *buf, ssize_t len, n2n_conn_t *conn, on_read_n2n_msg_t on_read_n2n_msg) {
     assert(conn);
-    uint32_t msg_len = 0;
+    uint32_t payload_len = 0;
     uint32_t rlen = len;
     const char *p = buf;
     if (len < 0) {
@@ -72,6 +57,7 @@ static int read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *conn) {
         }
         PROCESS_N2N_MSG;
     }
+
     if (conn->msg_buf != NULL) {
         // remain msg
         assert(conn->msg_read_len != 0);
@@ -83,13 +69,26 @@ static int read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *conn) {
             return 0;
         }
 
-        char *tmp_buf = (char *)_CALLOC(1, conn->msg_read_len + rlen);
+        int tmp_buf_len = conn->msg_read_len + rlen;
+        char *tmp_buf = (char *)_CALLOC(1, tmp_buf_len);
         _CHECK_OOM(tmp_buf);
         memcpy(tmp_buf, conn->msg_buf, conn->msg_read_len);
         memcpy(tmp_buf + conn->msg_read_len, p, rlen);
+        p = tmp_buf;
+        rlen = tmp_buf_len;
         PROCESS_N2N_MSG;
     }
     return -1;
+}
+
+char *n2n_pack_msg(const char *buf, ssize_t len, int *msg_len) {
+    *msg_len = len + N2N_MSG_HEAD_LEN;
+    char *msg = (char *)_CALLOC(1, *msg_len);
+    _CHECK_OOM(msg);
+    uint32_t payload_len = htonl(len);
+    memcpy(msg, &payload_len, N2N_MSG_HEAD_LEN);
+    memcpy(msg + N2N_MSG_HEAD_LEN, buf, len);
+    return msg;
 }
 
 /* -------------------------------------------------------------------------- */
@@ -159,6 +158,7 @@ static n2n_conn_t *new_conn(n2n_t *n2n, int conn_id, int couple_id) {
     uint64_t now = mstime();
     n2n_conn->start_connect_tm = n2n_conn->last_r_tm = now;
     n2n_conn->status = N2N_CONN_ST_OFF;
+    n2n_conn->n2n = n2n;
     add_conn(n2n, n2n_conn);
     return n2n_conn;
 }
@@ -259,15 +259,6 @@ static void on_front_accept(tcp_t *tcp, int conn_id) {
     if (n2n->on_n2n_front_accept) {
         n2n->on_n2n_front_accept(n2n, conn_id);
     }
-    // else {
-    //     couple_id = n2n_connect_backend(n2n, n2n->target_addr, conn_id, NULL);
-    //     if (couple_id <= 0) {
-    //         // error
-    //         n2n_close_conn(n2n, conn_id);
-    //         return;
-    //     }
-    //     n2n_conn->couple_id = couple_id;
-    // }
 }
 
 static void on_tcp_close(tcp_t *tcp, int conn_id) {
@@ -294,6 +285,13 @@ static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) 
     IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, { _LOG("on_tcp_recv n2n_conn does not exist %d", conn_id); });
     assert(n2n_conn);
     assert(n2n_conn->status == N2N_CONN_ST_ON);
+
+    // int rt = read_n2n_msg(buf, size, n2n_conn);
+    // if (rt < 0) {
+    //     fprintf(stderr, "recv error format msg  %d\n", conn_id);
+    //     return;
+    // }
+
     IF_GET_TCP_CONN(tcp_conn, n2n->tcp, conn_id, {});
     assert(tcp_conn);
     assert(tcp_conn->mode == TCP_CONN_MODE_SERV || tcp_conn->mode == TCP_CONN_MODE_CLI);
@@ -303,17 +301,11 @@ static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) 
         if (n2n->on_n2n_front_recv) {
             n2n->on_n2n_front_recv(n2n, conn_id, buf, size);
         }
-        // else {
-        //     n2n_send_to_back(n2n, n2n_conn->couple_id, buf, size);
-        // }
     } else {
         // backend
         if (n2n->on_n2n_backend_recv) {
             n2n->on_n2n_backend_recv(n2n, conn_id, buf, size);
         }
-        // else {
-        //     n2n_send_to_front(n2n, n2n_conn->couple_id, buf, size);
-        // }
     }
 
     n2n_conn->last_r_tm = mstime();
@@ -342,12 +334,6 @@ static void on_backend_connect(tcp_t *tcp, int conn_id) {
     if (n2n->on_n2n_backend_connect) {
         n2n->on_n2n_backend_connect(n2n, conn_id);
     }
-    // else {
-    //     if (!n2n_send_to_back(n2n, conn_id, NULL, 0)) {
-    //         n2n_close_conn(n2n, conn_id);
-    //         return;
-    //     }
-    // }
 }
 
 /* -------------------------------------------------------------------------- */
@@ -451,7 +437,6 @@ bool n2n_send_to_front(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
 
     int rt = tcp_send(n2n->tcp, conn_id, buf, size);
     if (!rt) {
-        // n2n_close_conn(n2n, conn_id);
         return false;
     }
     return true;
@@ -466,13 +451,6 @@ bool n2n_send_to_back(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
         return false;
     });
     assert(n2n_conn->status != N2N_CONN_ST_OFF);
-
-    // int couple_id = n2n_conn->couple_id;
-    // IF_GET_N2N_CONN(n2n_couple_conn, n2n, couple_id, {
-    //     _LOG("on_backend_connect n2n_couple_conn does not exist %d", conn_id);
-    //     // n2n_close_conn(n2n, conn_id);
-    //     return false;
-    // });
 
     if (buf && size > 0 && n2n_conn->status == N2N_CONN_ST_CONNECTING) {
         // maybe backend connection does not create
@@ -498,7 +476,6 @@ bool n2n_send_to_back(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
             if (item->buf) {
                 int rt = tcp_send(n2n->tcp, conn_id, item->buf, item->size);
                 if (!rt) {
-                    // n2n_close_conn(n2n, conn_id);
                     return false;
                 }
                 _FREE_IF(item->buf);
@@ -511,7 +488,6 @@ bool n2n_send_to_back(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
     if (buf && size > 0) {
         int rt = tcp_send(n2n->tcp, conn_id, buf, size);
         if (!rt) {
-            // n2n_close_conn(n2n, conn_id);
             return false;
         }
     }
@@ -532,7 +508,6 @@ void n2n_close_conn(n2n_t *n2n, int conn_id) {
 
     int couple_id = n2n_conn->couple_id;
     if (couple_id <= 0) {
-        // _LOG("n2n_close_conn couple_id error %d", conn_id);
         return;
     }
     IF_GET_N2N_CONN(couple_n2n_conn, n2n, couple_id, {
@@ -542,59 +517,3 @@ void n2n_close_conn(n2n_t *n2n, int conn_id) {
     couple_n2n_conn->status = N2N_CONN_ST_CLOSING;
     close_tcp_connection(n2n->tcp, couple_id);
 }
-
-// bool n2n_send(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
-//     if (!n2n || !n2n->tcp || conn_id <= 0) {
-//         return false;
-//     }
-
-//     IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, {
-//         _LOG("n2n_send n2n_conn does not exist %d", conn_id);
-//         return false;
-//     });
-//     assert(n2n_conn->status != N2N_CONN_ST_OFF);
-
-//     int couple_id = n2n_conn->couple_id;
-//     IF_GET_N2N_CONN(n2n_couple_conn, n2n, couple_id, {
-//         _LOG("on_backend_connect n2n_couple_conn does not exist %d", conn_id);
-//         // n2n_close_conn(n2n, conn_id);
-//         return false;
-//     });
-
-//     if (buf && size > 0 && if_send_to_buf(n2n_conn, n2n_couple_conn, buf, size)) {
-//         return true;
-//     }
-
-//     if (n2n_conn->status != N2N_CONN_ST_ON) {
-//         _LOG("n2n_send status error %d", n2n_conn->status);
-//         return false;
-//     }
-
-//     // check buf and send
-//     if (n2n_couple_conn->n2n_buf_list) {
-//         _LOG("backend connect couple send %d from %d", couple_id, conn_id);
-//         n2n_buf_t *item, *tmp;
-//         DL_FOREACH_SAFE(n2n_couple_conn->n2n_buf_list, item, tmp) {
-//             DL_DELETE(n2n_couple_conn->n2n_buf_list, item);
-//             if (item->buf) {
-//                 int rt = tcp_send(n2n->tcp, conn_id, item->buf, item->size);
-//                 if (!rt) {
-//                     // n2n_close_conn(n2n, conn_id);
-//                     return false;
-//                 }
-//                 _FREE_IF(item->buf);
-//             }
-//             _FREE_IF(item);
-//         }
-//         n2n_conn->n2n_buf_list = NULL;
-//     }
-
-//     if (buf && size > 0) {
-//         int rt = tcp_send(n2n->tcp, conn_id, buf, size);
-//         if (!rt) {
-//             // n2n_close_conn(n2n, conn_id);
-//             return false;
-//         }
-//     }
-//     return true;
-// }

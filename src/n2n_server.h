@@ -13,6 +13,8 @@
 #define N2N_CONN_ST_CONNECTING 2
 #define N2N_CONN_ST_CLOSING 3
 
+#define N2N_MSG_HEAD_LEN 4
+
 #define IF_GET_N2N_CONN(_V_CONN, _V_N2N, _V_CONN_ID, _ACT)        \
     n2n_conn_t *(_V_CONN) = n2n_get_conn((_V_N2N), (_V_CONN_ID)); \
     if (!(_V_CONN)) {                                             \
@@ -28,6 +30,7 @@ typedef void (*on_n2n_close_t)(n2n_t *n2n, int conn_id);
 typedef void (*on_n2n_front_recv_t)(n2n_t *n2n, int conn_id, const char *buf, ssize_t size);
 typedef void (*on_n2n_backend_recv_t)(n2n_t *n2n, int conn_id, const char *buf, ssize_t size);
 typedef void (*on_n2n_backend_connect_t)(n2n_t *n2n, int conn_id);
+typedef void (*on_read_n2n_msg_t)(const char *buf, ssize_t len, n2n_conn_t *conn);
 
 typedef struct n2n_buf_s {
     char *buf;
@@ -39,14 +42,13 @@ struct n2n_conn_s {
     int conn_id;
     int couple_id;
     n2n_buf_t *n2n_buf_list;
-    // UT_array *msg_arr;
-    // bool is_msg_pending;
     uv_timer_t *timer;
     uint64_t start_connect_tm;  // unit: millisecond
     int status;
     uint64_t last_r_tm;
     // uint64_t last_w_tm;
     void *data;
+    n2n_t *n2n;
 
     u_int32_t msg_read_len;
     char *msg_buf;
@@ -64,9 +66,6 @@ struct n2n_s {
     int w_keepalive;           // unit: second
     uint64_t connect_timeout;  // unit: millisecond
     void *data;
-
-    char *key;
-    char *iv;
 
     on_n2n_front_accept_t on_n2n_front_accept;
     on_n2n_close_t on_n2n_close;
@@ -86,5 +85,11 @@ bool n2n_send_to_front(n2n_t *n2n, int conn_id, const char *buf, ssize_t size);
 bool n2n_send_to_back(n2n_t *n2n, int conn_id, const char *buf, ssize_t size);
 n2n_conn_t *n2n_get_conn(n2n_t *n2n, int conn_id);
 void n2n_close_conn(n2n_t *n2n, int conn_id);
+
+/*
+format: remain_length(4B)payload(nB)
+*/
+int n2n_read_msg(const char *buf, ssize_t len, n2n_conn_t *conn, on_read_n2n_msg_t on_read_n2n_msg);
+char *n2n_pack_msg(const char *buf, ssize_t len, int *msg_len);
 
 #endif  // N2N_SERVER_H
