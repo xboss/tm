@@ -9,14 +9,20 @@ struct local_server_s {
     char *key;
 };
 
-char iv[CIPHER_IV_LEN + 1] = "3bc678def1123de452789a8907bcf90a";
+char iv[CIPHER_IV_LEN + 1] = {0};
 
 static inline bool send_to_back(local_server_t *local, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
-    // if (local->key) {
-    // }
-    // return n2n_send_to_back(n2n, conn_id, buf, size);
+    char *cipher_txt = (char *)buf;
+    int cipher_txt_len = size;
+    if (local->key) {
+        bzero(iv, CIPHER_IV_LEN);
+        cipher_txt = aes_encrypt(local->key, iv, buf, size, &cipher_txt_len);
+    }
     int msg_len = 0;
-    char *msg_buf = n2n_pack_msg(buf, size, &msg_len);
+    char *msg_buf = n2n_pack_msg(cipher_txt, cipher_txt_len, &msg_len);
+    if (local->key) {
+        _FREE_IF(cipher_txt);
+    }
     bool rt = n2n_send_to_back(n2n, conn_id, msg_buf, msg_len);
     _FREE_IF(msg_buf);
     return rt;
@@ -51,9 +57,21 @@ void on_n2n_close(n2n_t *n2n, int conn_id) {
     // free_ss5_conn(ss5_conn);
 }
 
-void on_read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *n2n_conn) {
+void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     IF_GET_N2N_CONN(test_conn, n2n_conn->n2n, n2n_conn->conn_id, { assert(0); });  // TODO: for test
-    n2n_send_to_front(n2n_conn->n2n, n2n_conn->couple_id, buf, len);
+    local_server_t *local = (local_server_t *)n2n_conn->n2n->data;
+    assert(local);
+    char *plan_txt = (char *)buf;
+    int plan_txt_len = size;
+    if (local->key) {
+        bzero(iv, CIPHER_IV_LEN);
+        plan_txt = aes_decrypt(local->key, iv, buf, size, &plan_txt_len);
+    }
+    // _PR(plan_txt, plan_txt_len);
+    n2n_send_to_front(n2n_conn->n2n, n2n_conn->couple_id, plan_txt, plan_txt_len);
+    if (local->key) {
+        _FREE_IF(plan_txt);
+    }
 }
 
 void on_n2n_front_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
@@ -106,7 +124,7 @@ local_server_t *init_local_server(uv_loop_t *loop, const char *listen_ip, uint16
     local->n2n = n2n;
 
     if (pwd) {
-        pwd2key(pwd, &local->key);
+        local->key = pwd2key(pwd);
         _LOG("start cipher mode %s", local->key);
     }
 

@@ -36,7 +36,7 @@ REP: 回复请求的状态
 #define SS5_PHASE_DATA 3
 #define SS5_PHASE_AUTH_NP 4
 
-char iv[CIPHER_IV_LEN + 1] = "3bc678def1123de452789a8907bcf90a";
+char iv[CIPHER_IV_LEN + 1] = {0};
 
 struct socks5_server_s {
     uv_loop_t *loop;
@@ -83,12 +83,18 @@ static void free_ss5_conn(socks5_conn_t *conn) {
 }
 
 static inline bool send_to_front(socks5_server_t *socks5, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
-    // if (socks5->key) {
+    char *cipher_txt = (char *)buf;
+    int cipher_txt_len = size;
+    if (socks5->key) {
+        bzero(iv, CIPHER_IV_LEN);
+        cipher_txt = aes_encrypt(socks5->key, iv, buf, size, &cipher_txt_len);
+    }
 
-    // }
-    // return n2n_send_to_front(n2n, conn_id, buf, size);
     int msg_len = 0;
-    char *msg_buf = n2n_pack_msg(buf, size, &msg_len);
+    char *msg_buf = n2n_pack_msg(cipher_txt, cipher_txt_len, &msg_len);
+    if (socks5->key) {
+        _FREE_IF(cipher_txt);
+    }
     bool rt = n2n_send_to_front(n2n, conn_id, msg_buf, msg_len);
     _FREE_IF(msg_buf);
     return rt;
@@ -342,29 +348,42 @@ void on_n2n_close(n2n_t *n2n, int conn_id) {
 
 void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     IF_GET_N2N_CONN(test_conn, n2n_conn->n2n, n2n_conn->conn_id, { assert(0); });  // TODO: for test
+    socks5_conn_t *ss5_conn = (socks5_conn_t *)n2n_conn->data;
+    assert(ss5_conn);
+    socks5_server_t *socks5 = ss5_conn->socks5;
+    assert(socks5);
+
+    char *plan_txt = (char *)buf;
+    int plan_txt_len = size;
+    if (socks5->key) {
+        bzero(iv, CIPHER_IV_LEN);
+        plan_txt = aes_decrypt(socks5->key, iv, buf, size, &plan_txt_len);
+    }
+    // _PR(plan_txt, plan_txt_len);
 
     n2n_t *n2n = n2n_conn->n2n;
     int conn_id = n2n_conn->conn_id;
-    socks5_conn_t *ss5_conn = (socks5_conn_t *)n2n_conn->data;
-    assert(ss5_conn);
     switch (ss5_conn->phase) {
         case SS5_PHASE_AUTH:
-            ss5_auth((const u_char *)buf, size, n2n_conn);
+            ss5_auth((const u_char *)plan_txt, plan_txt_len, n2n_conn);
             break;
         case SS5_PHASE_AUTH_NP:
-            ss5_auth_np((const u_char *)buf, size, n2n_conn);
+            ss5_auth_np((const u_char *)plan_txt, plan_txt_len, n2n_conn);
             break;
         case SS5_PHASE_REQ:
-            ss5_req((const u_char *)buf, size, n2n_conn);
+            ss5_req((const u_char *)plan_txt, plan_txt_len, n2n_conn);
             break;
         case SS5_PHASE_DATA:
             _LOG("phase data send id: %d", conn_id);
-            if (!n2n_send_to_back(n2n, n2n_conn->couple_id, buf, size)) {
+            if (!n2n_send_to_back(n2n, n2n_conn->couple_id, plan_txt, plan_txt_len)) {
                 n2n_close_conn(n2n, n2n_conn->couple_id);
             }
             break;
         default:
             break;
+    }
+    if (socks5->key) {
+        _FREE_IF(plan_txt);
     }
 }
 
@@ -441,7 +460,7 @@ socks5_server_t *init_socks5_server(uv_loop_t *loop, const char *ip, uint16_t po
     socks5->n2n = n2n;
 
     if (pwd) {
-        pwd2key(pwd, &socks5->key);
+        socks5->key = pwd2key(pwd);
         _LOG("start cipher mode %s", socks5->key);
     }
 

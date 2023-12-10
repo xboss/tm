@@ -16,22 +16,6 @@ uint64_t ustime() {
 
 uint64_t mstime() { return ustime() / 1000L; }
 
-void char_to_hex(const char *src, int len, char *des) {
-    char hex_table[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
-    while (len--) {
-        *(des++) = hex_table[(*src) >> 4];
-        *(des++) = hex_table[*(src++) & 0x0f];
-    }
-}
-
-void pwd2key(const char *pwd, char **key) {
-    size_t pwd_len = strnlen(pwd, CIPHER_KEY_LEN / 2);
-    *key = (char *)_CALLOC(1, CIPHER_KEY_LEN + 1);
-    _CHECK_OOM(*key);
-    memset(*key, 'F', CIPHER_KEY_LEN);
-    char_to_hex(pwd, pwd_len, *key);
-}
-
 char *load_str_file(const char *filename) {
     FILE *fp;
     if ((fp = fopen(filename, "r")) == NULL) {

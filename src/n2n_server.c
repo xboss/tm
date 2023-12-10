@@ -16,55 +16,6 @@ static void on_conn_timer(uv_timer_t *handle);
 // static void on_read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *conn) {}
 typedef void (*on_read_n2n_msg_t)(const char *buf, ssize_t len, n2n_conn_t *conn);
 
-// #define PROCESS_N2N_MSG                               \
-//     payload_len = ntohl(*(uint32_t *)(p));            \
-//     while (rlen >= N2N_MSG_HEAD_LEN + payload_len) {  \
-//         p += N2N_MSG_HEAD_LEN;                        \
-//         on_read_n2n_msg(p, payload_len, conn);        \
-//         rlen = rlen - payload_len - N2N_MSG_HEAD_LEN; \
-//         p += payload_len;                             \
-//         if (rlen <= N2N_MSG_HEAD_LEN) {               \
-//             break;                                    \
-//         }                                             \
-//         payload_len = ntohl(*(uint32_t *)(p));        \
-//         if (rlen < N2N_MSG_HEAD_LEN + payload_len) {  \
-//             break;                                    \
-//         }                                             \
-//     }                                                 \
-//     if (rlen == 0) {                                  \
-//         return 0;                                     \
-//     }                                                 \
-//     _FREE_IF(conn->msg_buf);                          \
-//     conn->msg_buf = (char *)_CALLOC(1, rlen);         \
-//     memcpy(conn->msg_buf, p, rlen);                   \
-//     conn->msg_read_len = rlen
-
-// static int process_n2n_msg(n2n_conn_t *conn, uint32_t *rlen, uint32_t *payload_len, char **pp,
-//                            on_read_n2n_msg_t on_read_n2n_msg) {
-//     *payload_len = ntohl(*(uint32_t *)(*pp));
-//     while (*rlen >= N2N_MSG_HEAD_LEN + *payload_len) {
-//         *pp += N2N_MSG_HEAD_LEN;
-//         on_read_n2n_msg(*pp, *payload_len, conn);
-//         *rlen = *rlen - *payload_len - N2N_MSG_HEAD_LEN;
-//         *pp += *payload_len;
-//         if (*rlen <= N2N_MSG_HEAD_LEN) {
-//             break;
-//         }
-//         *payload_len = ntohl(*(uint32_t *)(*pp));
-//         if (*rlen < N2N_MSG_HEAD_LEN + *payload_len) {
-//             break;
-//         }
-//     }
-//     if (*rlen == 0) {
-//         return 0;
-//     }
-//     _FREE_IF(conn->msg_buf);
-//     conn->msg_buf = (char *)_CALLOC(1, *rlen);
-//     memcpy(conn->msg_buf, *pp, *rlen);
-//     conn->msg_read_len = *rlen;
-//     return 0;
-// }
-
 int n2n_read_msg(const char *buf, ssize_t len, n2n_conn_t *conn, on_read_n2n_msg_t on_read_n2n_msg) {
     assert(conn);
     if (len < 0) {
@@ -477,7 +428,10 @@ bool n2n_send_to_front(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
         _LOG("n2n_send_to_front n2n_conn does not exist %d", conn_id);
         return false;
     });
-    assert(n2n_conn->status == N2N_CONN_ST_ON);
+    if (n2n_conn->status != N2N_CONN_ST_ON) {
+        return false;
+    }
+    // assert(n2n_conn->status == N2N_CONN_ST_ON);
 
     int rt = tcp_send(n2n->tcp, conn_id, buf, size);
     if (!rt) {

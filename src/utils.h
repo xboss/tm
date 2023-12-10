@@ -51,19 +51,32 @@
     } while (0)
 #endif
 
+#ifndef _PR
+#define _PR(raw, raw_len)                                  \
+    do {                                                   \
+        for (size_t _PR_i = 0; _PR_i < raw_len; _PR_i++) { \
+            printf("%.2X ", raw[_PR_i]);                   \
+        }                                                  \
+        printf("\n");                                      \
+    } while (0)
+#endif
+
+// printf("raw:\n");
+// for (size_t i = 0; i < raw_len; i++) {
+//     printf("%X ", raw[i]);
+// }
+// printf("\n");
+
 #define IF_UV_ERROR(_r, _msg, _act)                           \
     if ((_r) < 0) {                                           \
         fprintf(stderr, "" #_msg " %s\n", uv_strerror((_r))); \
         { _act }                                              \
     }
 
-#define CIPHER_KEY_LEN 32
-#define CIPHER_IV_LEN 32
-
 uint64_t ustime();
 uint64_t mstime();
-void char_to_hex(const char *src, int len, char *des);
-void pwd2key(const char *pwd, char **key);
+// void char_to_hex(const char *src, int len, char *des);
+// char *pwd2key(const char *pwd);
 char *load_str_file(const char *filename);
 
 #endif  // UTILS_H
