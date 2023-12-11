@@ -22,13 +22,13 @@ inline static int pkcs7_unpadding(const char *in, int in_len) {
     return (int)padding_size;
 }
 
-inline static void char_to_hex(const char *src, int len, char *des) {
-    char hex_table[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
-    while (len--) {
-        *(des++) = hex_table[(*src) >> 4];
-        *(des++) = hex_table[*(src++) & 0x0f];
-    }
-}
+// inline static void char_to_hex(const char *src, int len, char *des) {
+//     char hex_table[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
+//     while (len--) {
+//         *(des++) = hex_table[(*src) >> 4];
+//         *(des++) = hex_table[*(src++) & 0x0f];
+//     }
+// }
 
 char *pwd2key(const char *pwd) {
     size_t pwd_len = strnlen(pwd, CIPHER_KEY_LEN);
@@ -51,8 +51,6 @@ char *aes_encrypt(const char *key, const char *iv, const char *in, int in_len, i
     char *after_padding_buf = pkcs7_padding(in, in_len, out_len);
     char *out_buf = (char *)malloc(*out_len);
     memset(out_buf, 0, *out_len);
-    // void AES_cbc_encrypt(const unsigned char *in, unsigned char *out, size_t length, const AES_KEY *key,
-    //                      unsigned char *ivec, const int enc);
     AES_cbc_encrypt((const unsigned char *)after_padding_buf, (unsigned char *)out_buf, *out_len, &aes_key,
                     (unsigned char *)iv, AES_ENCRYPT);
     _FREE_IF(after_padding_buf);

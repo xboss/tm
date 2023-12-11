@@ -3,7 +3,7 @@
 #include "utils.h"
 #include "utlist.h"
 
-void on_conn_timer_close(uv_handle_t *handle);
+static void on_conn_timer_close(uv_handle_t *handle);
 static void on_conn_timer(uv_timer_t *handle);
 
 /* -------------------------------------------------------------------------- */
@@ -12,9 +12,6 @@ static void on_conn_timer(uv_timer_t *handle);
 
 // #define N2N_MSG_CMD_DATA 0x00U
 // #define N2N_MSG_CMD_AUTH 0x01U
-
-// static void on_read_n2n_msg(const char *buf, ssize_t len, n2n_conn_t *conn) {}
-typedef void (*on_read_n2n_msg_t)(const char *buf, ssize_t len, n2n_conn_t *conn);
 
 int n2n_read_msg(const char *buf, ssize_t len, n2n_conn_t *conn, on_read_n2n_msg_t on_read_n2n_msg) {
     assert(conn);
@@ -194,7 +191,7 @@ static bool start_conn_timer(n2n_t *n2n, n2n_conn_t *n2n_conn) {
 /*                                  callback                                  */
 /* -------------------------------------------------------------------------- */
 
-void on_conn_timer_close(uv_handle_t *handle) {
+static void on_conn_timer_close(uv_handle_t *handle) {
     _LOG("on_conn_timer_close...");
     n2n_t *n2n = (n2n_t *)handle->data;
     timer_req_t *timer_req = (timer_req_t *)handle;

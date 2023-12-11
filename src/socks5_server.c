@@ -36,7 +36,7 @@ REP: 回复请求的状态
 #define SS5_PHASE_DATA 3
 #define SS5_PHASE_AUTH_NP 4
 
-char iv[CIPHER_IV_LEN + 1] = {0};
+static char iv[CIPHER_IV_LEN + 1] = {0};
 
 struct socks5_server_s {
     uv_loop_t *loop;
@@ -283,7 +283,7 @@ static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
         }
     } else if (atyp == SS5_ATYP_IPV6) {
         _LOG("ss5 ipv6 type");
-        uint16_t port = ntohs((uint16_t)buf[19]);
+        // uint16_t port = ntohs((uint16_t)buf[19]);
         // TODO: connect to dest
     } else if (atyp == SS5_ATYP_DOMAIN) {
         _LOG("ss5 domain type");

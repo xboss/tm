@@ -9,7 +9,7 @@ struct local_server_s {
     char *key;
 };
 
-char iv[CIPHER_IV_LEN + 1] = {0};
+static char iv[CIPHER_IV_LEN + 1] = {0};
 
 static inline bool send_to_back(local_server_t *local, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
     char *cipher_txt = (char *)buf;
@@ -38,7 +38,7 @@ static inline bool send_to_back(local_server_t *local, n2n_t *n2n, int conn_id, 
     IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, {});         \
     assert(n2n_conn)
 
-void on_n2n_front_accept(n2n_t *n2n, int conn_id) {
+static void on_n2n_front_accept(n2n_t *n2n, int conn_id) {
     _LOG("on_n2n_front_accept %d", conn_id);
     GET_LOCAL_INFO;
     n2n_conn->couple_id = n2n_connect_backend(n2n, n2n->target_addr, conn_id, NULL);
@@ -50,14 +50,14 @@ void on_n2n_front_accept(n2n_t *n2n, int conn_id) {
     n2n_conn->couple_id = n2n_conn->couple_id;
 }
 
-void on_n2n_close(n2n_t *n2n, int conn_id) {
+static void on_n2n_close(n2n_t *n2n, int conn_id) {
     _LOG("on_n2n_close %d", conn_id);
     // GET_LOCAL_INFO;
     // n2n_conn->data = NULL;
     // free_ss5_conn(ss5_conn);
 }
 
-void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
+static void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     IF_GET_N2N_CONN(test_conn, n2n_conn->n2n, n2n_conn->conn_id, { assert(0); });  // TODO: for test
     local_server_t *local = (local_server_t *)n2n_conn->n2n->data;
     assert(local);
@@ -74,13 +74,13 @@ void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     }
 }
 
-void on_n2n_front_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
+static void on_n2n_front_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
     _LOG("on_n2n_front_recv %d", conn_id);
     GET_LOCAL_INFO;
     send_to_back(local, n2n, n2n_conn->couple_id, buf, size);
 }
 
-void on_n2n_backend_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
+static void on_n2n_backend_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
     _LOG("on_n2n_backend_recv %d", conn_id);
     GET_LOCAL_INFO;
 
@@ -93,7 +93,7 @@ void on_n2n_backend_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size)
     }
 }
 
-void on_n2n_backend_connect(n2n_t *n2n, int conn_id) {
+static void on_n2n_backend_connect(n2n_t *n2n, int conn_id) {
     _LOG("on_n2n_backend_connect %d", conn_id);
     GET_LOCAL_INFO;
     if (!send_to_back(local, n2n, conn_id, NULL, 0)) {

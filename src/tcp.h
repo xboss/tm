@@ -6,11 +6,6 @@
 
 #include "uthash.h"
 
-// #define TCP_CONN_ST_OFF 0x00
-// #define TCP_CONN_ST_ON 0x01
-// #define TCP_CONN_ST_CONNECTING 0x02
-// #define TCP_CONN_ST_CLOSING 0x03
-
 #define TCP_CONN_MODE_SERV 0x01
 #define TCP_CONN_MODE_CLI 0x02
 
@@ -33,15 +28,11 @@ typedef void (*on_tcp_close_t)(tcp_t *tcp, int conn_id);
 
 struct tcp_connection_s {
     int id;
-    // char c_ip[TCP_MAX_IP_LEN + 1];
     struct sockaddr_in c_addr;
-    // uint16_t c_port;
     uv_tcp_t *cli;
-    // char status;
     tcp_t *tcp;
     void *data;
     char mode;
-    // int couple_conn_id;
     uint64_t last_r_tm;
     uint64_t last_w_tm;
 
@@ -50,9 +41,7 @@ struct tcp_connection_s {
 
 struct tcp_s {
     int cid;
-    // char s_ip[TCP_MAX_IP_LEN + 1];
     struct sockaddr_in s_addr;
-    // uint16_t s_port;
     uv_tcp_t *serv;
     uv_loop_t *loop;
     tcp_connection_t *conns;

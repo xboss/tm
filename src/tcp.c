@@ -217,7 +217,6 @@ static void on_tcp_connect(uv_connect_t *req, int status) {
 
 on_tcp_connect_end:
     _FREE_IF(req);
-    _LOG("on_tcp_connect id: %d", conn->id);
 }
 
 static void on_tcp_accept(uv_stream_t *server, int status) {
