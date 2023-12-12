@@ -34,7 +34,6 @@ char *pwd2key(const char *pwd) {
     size_t pwd_len = strnlen(pwd, CIPHER_KEY_LEN);
 
     char *key = (char *)_CALLOC(1, CIPHER_KEY_LEN + 1);
-    // memset(key, 'F', CIPHER_KEY_LEN);
     memcpy(key, pwd, pwd_len);
     return key;
 }

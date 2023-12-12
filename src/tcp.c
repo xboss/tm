@@ -121,6 +121,7 @@ static void on_tcp_shutdown(uv_shutdown_t *req, int status) {
         HASH_ITER(hh, tcp->conns, conn, tmp) { close_tcp_connection(tcp, conn->id); }
     }
     _FREE_IF(req);
+    _FREE_IF(tcp->serv);
 }
 
 static void on_tcp_write(uv_write_t *req, int status) {
@@ -306,7 +307,8 @@ void stop_tcp_server(tcp_t *tcp) {
 
     int r = uv_read_stop((uv_stream_t *)tcp->serv);
     IF_UV_ERROR(r, "tcp server stop read error", {});
-    uv_shutdown_t *req = (uv_shutdown_t *)_CALLOC(1, sizeof(uv_shutdown));
+    uv_shutdown_t *req = (uv_shutdown_t *)_CALLOC(1, sizeof(uv_shutdown_t));
+    _CHECK_OOM(req);
     req->data = tcp;
     r = uv_shutdown(req, (uv_stream_t *)tcp->serv, on_tcp_shutdown);
     IF_UV_ERROR(r, "tcp server shutdown error", {
@@ -315,7 +317,10 @@ void stop_tcp_server(tcp_t *tcp) {
             tcp_connection_t *tmp;
             HASH_ITER(hh, tcp->conns, conn, tmp) { close_tcp_connection(tcp, conn->id); }
         }
+        _FREE_IF(req);
+        _FREE_IF(tcp->serv);
     });
+    free_tcp(tcp);
 }
 
 bool start_tcp_server_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr) {

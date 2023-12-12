@@ -207,7 +207,7 @@ static void on_conn_timer_close(uv_handle_t *handle) {
 }
 
 static void on_conn_timer(uv_timer_t *handle) {
-    _LOG("on_conn_timer...");
+    // _LOG("on_conn_timer...");
     n2n_t *n2n = (n2n_t *)handle->data;
     timer_req_t *timer_req = (timer_req_t *)handle;
     int conn_id = timer_req->conn_id;
@@ -386,7 +386,7 @@ void n2n_free_server(n2n_t *n2n) {
     }
     if (n2n->tcp) {
         stop_tcp_server(n2n->tcp);
-        free_tcp(n2n->tcp);
+        // free_tcp(n2n->tcp);
     }
     free(n2n);
 }

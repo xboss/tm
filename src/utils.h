@@ -37,11 +37,13 @@
     } while (0)
 #endif
 
-// #ifndef _LOG
-// #define _LOG(fmt, args...) \
-//     do {                   \
-//     } while (0)
-// #endif
+/*
+#ifndef _LOG
+#define _LOG(fmt, args...) \
+    do {                   \
+    } while (0)
+#endif
+*/
 
 #ifndef _ERR
 #define _ERR(fmt, args...)            \
@@ -60,12 +62,6 @@
         printf("\n");                                      \
     } while (0)
 #endif
-
-// printf("raw:\n");
-// for (size_t i = 0; i < raw_len; i++) {
-//     printf("%X ", raw[i]);
-// }
-// printf("\n");
 
 #define IF_UV_ERROR(_r, _msg, _act)                           \
     if ((_r) < 0) {                                           \

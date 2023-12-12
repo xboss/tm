@@ -1,5 +1,6 @@
 CC = gcc
-CFLAGS = -c -Wall
+CFLAGS = -c -Wno-deprecated-declarations
+# CFLAGS = -c -Wall
 CDEBUG = -g -DDEBUG
 # CDEBUG = -g 
 OUTPUT_DIR = ./build/

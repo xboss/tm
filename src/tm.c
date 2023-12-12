@@ -66,18 +66,28 @@ static int parse_args(int argc, char const *argv[]) {
     return 0;
 }
 
-// void signal_handler(uv_signal_t *handle, int signum) {
-//     printf("Signal received: %d\n", signum);
-//     uv_signal_stop(handle);
-// }
+void signal_handler(uv_signal_t *handle, int signum) {
+    _LOG("signal %d", signum);
+    if (SIGPIPE == signum) {
+        return;
+    }
+    if (SIGINT == signum) {
+        uv_stop(handle->loop);
+        _LOG("stop loop");
+    }
 
-// static bool init_signal(uv_loop_t *loop) {
-//     uv_signal_t signal;
-//     //(uv_signal_t *)_CALLOC(1, sizeof(uv_signal_t));
-//     int r = uv_signal_init(loop, &signal);
+    // uv_signal_stop(handle);
+    // _FREE_IF(handle);
+    _LOG("stop signal %d", signum);
+}
 
-//     r = uv_signal_start(&signal, signal_handler, SIGUSR1);
-// }
+static bool init_signal(uv_loop_t *loop, uv_signal_t *sig, int signum) {
+    int r = uv_signal_init(loop, sig);
+    IF_UV_ERROR(r, "uv signal init", { return false; });
+    r = uv_signal_start(sig, signal_handler, signum);
+    IF_UV_ERROR(r, "uv signal start", { return false; });
+    return true;
+}
 
 int main(int argc, char const *argv[]) {
     uv_loop_t *loop = uv_default_loop();
@@ -114,6 +124,30 @@ int main(int argc, char const *argv[]) {
         return 1;
     }
 
+    // uv_signal_t *sig_pipe = (uv_signal_t *)_CALLOC(1, sizeof(uv_signal_t));
+    // _CHECK_OOM(sig_pipe);
+    // if (!init_signal(loop, sig_pipe, SIGPIPE)) {
+    //     _ERR("init signal error");
+    //     _FREE_IF(sig_pipe);
+    //     return 1;
+    // }
+
+    // uv_signal_t *sig_int = (uv_signal_t *)_CALLOC(1, sizeof(uv_signal_t));
+    // _CHECK_OOM(sig_int);
+    // if (!init_signal(loop, sig_int, SIGINT)) {
+    //     _ERR("init signal error");
+    //     _FREE_IF(sig_int);
+    //     return 1;
+    // }
+
+    uv_signal_t *sig = (uv_signal_t *)_CALLOC(1, sizeof(uv_signal_t));
+    _CHECK_OOM(sig);
+    if (!init_signal(loop, sig, SIGPIPE) || !init_signal(loop, sig, SIGINT)) {
+        _ERR("init signal error");
+        _FREE_IF(sig);
+        return 1;
+    }
+
     int rt = uv_run(loop, UV_RUN_DEFAULT);
     if (local) {
         free_local_server(local);
@@ -121,6 +155,10 @@ int main(int argc, char const *argv[]) {
     if (socks5) {
         free_socks5_server(socks5);
     }
+    // _FREE_IF(sig_pipe);
+    _FREE_IF(sig);
+    // uv_loop_close(loop);
+    _LOG("tm end");
 
     return rt;
 }
