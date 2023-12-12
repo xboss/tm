@@ -6,10 +6,14 @@ Maybe it doesn't deserve a name.
 * Security
 * Tunnel
 
+## Supported platforms
+Linux, MacOS, Windows
+
 ## Building
 * Dependencies
   * [libuv-v1.47](https://dist.libuv.org/dist/v1.47.0/)
   * [openssl](https://github.com/openssl/openssl/blob/master/INSTALL.md#installing-openssl)
+
 * Compile
 ```
 cd tm
