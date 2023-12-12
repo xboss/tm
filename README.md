@@ -1,4 +1,4 @@
-# tm
+# TM
 Maybe it doesn't deserve a name.
 
 ## Features
@@ -10,7 +10,7 @@ Maybe it doesn't deserve a name.
 * Dependencies
   * [libuv-v1.47](https://dist.libuv.org/dist/v1.47.0/)
   * [openssl](https://github.com/openssl/openssl/blob/master/INSTALL.md#installing-openssl)
-* compile
+* Compile
 ```
 cd tm
 mkdir build
