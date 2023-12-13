@@ -16,25 +16,25 @@ Linux, MacOS, Windows
 
 * Compile
 ```
-cd tm
-mkdir build
-make
+$ cd tm
+$ mkdir build
+$ make
 ```
 
 ## Usage
 * Help
 ```
-tm 
+$ tm 
 Usage: tm <mode> <password> <listen ip> <listen port> [remote ip] [remote port]
         <mode>: local or socks5
 ```
 
 * Start remote socks5 service
 ```
-tm socks5 yourpassword 0.0.0.0 2222
+$ tm socks5 yourpassword 0.0.0.0 2222
 ```
 
 * Start local service
 ```
-tm local yourpassword 0.0.0.0 1111 127.0.0.1 2222
+$ tm local yourpassword 0.0.0.0 1111 127.0.0.1 2222
 ```
