@@ -4,6 +4,36 @@
 
 #define DEF_BACKLOG 128
 
+typedef struct tcp_connection_s tcp_connection_t;
+
+struct tcp_connection_s {
+    int id;
+    struct sockaddr_in c_addr;
+    uv_tcp_t *cli;
+    tcp_t *tcp;
+    void *data;
+    tcp_conn_mode_t mode;
+    uint64_t last_r_tm;
+    uint64_t last_w_tm;
+
+    UT_hash_handle hh;
+};
+
+struct tcp_s {
+    int cid;
+    struct sockaddr_in s_addr;
+    uv_tcp_t *serv;
+    uv_loop_t *loop;
+    tcp_connection_t *conns;
+    void *data;
+    tcp_option_t opts;
+
+    on_tcp_accept_t on_accept;
+    on_tcp_connect_t on_connect;
+    on_tcp_recv_t on_recv;
+    on_tcp_close_t on_close;
+};
+
 /* -------------------------------------------------------------------------- */
 /*                             connection manager                             */
 /* -------------------------------------------------------------------------- */
@@ -169,7 +199,7 @@ static void on_tcp_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
     _LOG("on_tcp_read id: %d n: %ld", conn->id, nread);
 }
 
-static tcp_connection_t *init_conn(int id, uv_tcp_t *cli, tcp_t *tcp, char mode, void *data) {
+static tcp_connection_t *init_conn(int id, uv_tcp_t *cli, tcp_t *tcp, tcp_conn_mode_t mode, void *data) {
     if (!cli || !tcp || id <= 0) {
         return NULL;
     }
@@ -204,7 +234,7 @@ static void on_tcp_connect(uv_connect_t *req, int status) {
         goto on_tcp_connect_end;
     });
 
-    tcp_connection_t *conn = init_conn(connect_req->conn_id, cli, tcp, TCP_CONN_MODE_CLI, connect_req->data);
+    tcp_connection_t *conn = init_conn(connect_req->conn_id, cli, tcp, tcp_conn_mode_client, connect_req->data);
     if (!conn) {
         close_conn(cli);
         goto on_tcp_connect_end;
@@ -236,7 +266,7 @@ static void on_tcp_accept(uv_stream_t *server, int status) {
         close_conn(cli);
         return;
     });
-    tcp_connection_t *conn = init_conn(gen_conn_id(tcp), cli, tcp, TCP_CONN_MODE_SERV, NULL);
+    tcp_connection_t *conn = init_conn(gen_conn_id(tcp), cli, tcp, tcp_conn_mode_server, NULL);
     if (!conn) {
         _ERR("init tcp connection error");
         close_conn(cli);
@@ -258,11 +288,12 @@ void close_tcp_connection(tcp_t *tcp, int conn_id) {
     if (!tcp || !tcp->conns || conn_id <= 0) {
         return;
     }
-    // tcp_connection_t *conn = get_conn(tcp, conn_id);
-    // if (!conn) {
-    //     return;
-    // }
-    IF_GET_TCP_CONN(conn, tcp, conn_id, { return; });
+    tcp_connection_t *conn = get_conn(tcp, conn_id);
+    if (!conn) {
+        _ERR("tcp connection does not exist %d when close", conn_id);
+        return;
+    }
+    // IF_GET_TCP_CONN(conn, tcp, conn_id, { return; });
 
     assert(conn->cli);
 
@@ -278,7 +309,7 @@ void free_tcp(tcp_t *tcp) {
 }
 
 tcp_t *init_tcp(uv_loop_t *loop, void *data, on_tcp_accept_t on_accept, on_tcp_connect_t on_connect,
-                on_tcp_recv_t on_recv, on_tcp_close_t on_close) {
+                on_tcp_recv_t on_recv, on_tcp_close_t on_close, const tcp_option_t *opts) {
     if (!loop) {
         return NULL;
     }
@@ -292,6 +323,11 @@ tcp_t *init_tcp(uv_loop_t *loop, void *data, on_tcp_accept_t on_accept, on_tcp_c
     tcp->on_connect = on_connect;
     tcp->on_recv = on_recv;
     tcp->data = data;
+    tcp->opts.backlog = DEF_BACKLOG;
+    if (opts) {
+        tcp->opts = *opts;
+    }
+
     return tcp;
 }
 
@@ -341,7 +377,7 @@ bool start_tcp_server_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr) {
         return false;
     });
     serv->data = tcp;
-    r = uv_listen((uv_stream_t *)serv, DEF_BACKLOG, on_tcp_accept);
+    r = uv_listen((uv_stream_t *)serv, tcp->opts.backlog, on_tcp_accept);
     IF_UV_ERROR(r, "init tcp server listen error", {
         _FREE_IF(serv);
         return false;
@@ -369,7 +405,6 @@ int connect_tcp_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr, void *dat
     _CHECK_OOM(cli);
     int r = uv_tcp_init(tcp->loop, cli);
     IF_UV_ERROR(r, "tcp connect error", {
-        // uv_close((uv_handle_t *)cli, on_tcp_close);
         close_conn(cli);
         return 0;
     });
@@ -382,7 +417,6 @@ int connect_tcp_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr, void *dat
     r = uv_tcp_connect((uv_connect_t *)connect_req, cli, (const struct sockaddr *)&sockaddr, on_tcp_connect);
     IF_UV_ERROR(r, "tcp connect error", {
         _FREE_IF(connect_req);
-        // uv_close((uv_handle_t *)cli, on_tcp_close);
         close_conn(cli);
         return 0;
     });
@@ -432,14 +466,57 @@ bool tcp_send(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) {
     return true;
 }
 
-tcp_connection_t *get_tcp_connection(tcp_t *tcp, int conn_id) {
+bool is_tcp_connection(tcp_t *tcp, int conn_id) {
+    tcp_connection_t *conn = get_conn(tcp, conn_id);
+    return conn ? true : false;
+}
+
+void *get_tcp_conn_data(tcp_t *tcp, int conn_id) {
     tcp_connection_t *conn = get_conn(tcp, conn_id);
     if (!conn) {
         return NULL;
     }
-    if (uv_is_closing((uv_handle_t *)conn->cli)) {
-        _LOG("closing...... when get tcp conn %d", conn_id);
-        // return NULL;
-    }
-    return conn;
+    return conn->data;
 }
+
+void set_tcp_conn_data(tcp_t *tcp, int conn_id, void *data) {
+    tcp_connection_t *conn = get_conn(tcp, conn_id);
+    if (!conn) {
+        return;
+    }
+    conn->data = data;
+}
+
+tcp_conn_mode_t get_tcp_conn_mode(tcp_t *tcp, int conn_id) {
+    tcp_connection_t *conn = get_conn(tcp, conn_id);
+    if (!conn) {
+        return tcp_conn_mode_none;
+    }
+    return conn->mode;
+}
+
+void set_tcp_data(tcp_t *tcp, void *data) {
+    if (!tcp) {
+        return;
+    }
+    tcp->data = data;
+}
+
+void *get_tcp_data(tcp_t *tcp) {
+    if (!tcp) {
+        return NULL;
+    }
+    return tcp->data;
+}
+
+// tcp_connection_t *get_tcp_connection(tcp_t *tcp, int conn_id) {
+//     tcp_connection_t *conn = get_conn(tcp, conn_id);
+//     if (!conn) {
+//         return NULL;
+//     }
+//     if (uv_is_closing((uv_handle_t *)conn->cli)) {
+//         _LOG("closing...... when get tcp conn %d", conn_id);
+//         // return NULL;
+//     }
+//     return conn;
+// }
