@@ -238,7 +238,7 @@ on_conn_timer_timout:
 
 static void on_front_accept(tcp_t *tcp, int conn_id) {
     _LOG("on front accept %d", conn_id);
-    n2n_t *n2n = (n2n_t *)tcp->data;
+    n2n_t *n2n = (n2n_t *)get_tcp_data(tcp);
     assert(n2n);
     int couple_id = 0;
     n2n_conn_t *n2n_conn = new_conn(n2n, conn_id, couple_id);
@@ -255,7 +255,7 @@ static void on_front_accept(tcp_t *tcp, int conn_id) {
 
 static void on_tcp_close(tcp_t *tcp, int conn_id) {
     _LOG("on tcp close %d", conn_id);
-    n2n_t *n2n = (n2n_t *)tcp->data;
+    n2n_t *n2n = (n2n_t *)get_tcp_data(tcp);
     assert(n2n);
     IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, {
         _LOG("on_tcp_close n2n_conn does not exist %d", conn_id);
@@ -272,7 +272,7 @@ static void on_tcp_close(tcp_t *tcp, int conn_id) {
 
 static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) {
     _LOG("on tcp recv %d", conn_id);
-    n2n_t *n2n = (n2n_t *)tcp->data;
+    n2n_t *n2n = (n2n_t *)get_tcp_data(tcp);
     assert(n2n);
     IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, { _LOG("on_tcp_recv n2n_conn does not exist %d", conn_id); });
     assert(n2n_conn);
@@ -284,11 +284,12 @@ static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) 
     //     return;
     // }
 
-    IF_GET_TCP_CONN(tcp_conn, n2n->tcp, conn_id, {});
-    assert(tcp_conn);
-    assert(tcp_conn->mode == TCP_CONN_MODE_SERV || tcp_conn->mode == TCP_CONN_MODE_CLI);
+    // IF_GET_TCP_CONN(tcp_conn, n2n->tcp, conn_id, {});
+    // assert(tcp_conn);
+    tcp_conn_mode_t conn_mode = get_tcp_conn_mode(tcp, conn_id);
+    assert(conn_mode != tcp_conn_mode_none);
 
-    if (tcp_conn->mode == TCP_CONN_MODE_SERV) {
+    if (conn_mode == tcp_conn_mode_server) {
         // front
         if (n2n->on_n2n_front_recv) {
             n2n->on_n2n_front_recv(n2n, conn_id, buf, size);
@@ -304,7 +305,7 @@ static void on_tcp_recv(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) 
 }
 static void on_backend_connect(tcp_t *tcp, int conn_id) {
     _LOG("backend connect ok %d", conn_id);
-    n2n_t *n2n = (n2n_t *)tcp->data;
+    n2n_t *n2n = (n2n_t *)get_tcp_data(tcp);
     IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, { _LOG("on_backend_connect n2n_conn does not exist %d", conn_id); });
     assert(n2n_conn);
     assert(n2n_conn->status == N2N_CONN_ST_CONNECTING);
@@ -342,7 +343,8 @@ n2n_t *n2n_init_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_p
     if (!loop || !listen_ip || listen_port <= 0) {
         return NULL;
     }
-    tcp_t *tcp = init_tcp(loop, NULL, on_front_accept, on_backend_connect, on_tcp_recv, on_tcp_close);
+    tcp_option_t opts = {.backlog = 128, .read_buf_size = 65536};
+    tcp_t *tcp = init_tcp(loop, NULL, on_front_accept, on_backend_connect, on_tcp_recv, on_tcp_close, &opts);
     if (!tcp) {
         return NULL;
     }
@@ -362,7 +364,8 @@ n2n_t *n2n_init_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_p
     }
     n2n_t *n2n = (n2n_t *)_CALLOC(1, sizeof(n2n_t));
     _CHECK_OOM(n2n);
-    tcp->data = n2n;
+    // tcp->data = n2n;
+    set_tcp_data(tcp, n2n);
     n2n->loop = loop;
     n2n->tcp = tcp;
     n2n->listen_addr = listen_sockaddr;

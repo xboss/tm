@@ -2,7 +2,36 @@
 
 #include "utils.h"
 
-#define DEF_BACKLOG 128
+const int def_backlog = 128;
+const size_t def_read_buf_size = 65536;
+
+typedef struct tcp_connection_s tcp_connection_t;
+
+struct tcp_connection_s {
+    int id;
+    struct sockaddr_in c_addr;
+    uv_tcp_t *cli;
+    tcp_t *tcp;
+    void *data;
+    tcp_conn_mode_t mode;
+    uint64_t last_r_tm;
+    uint64_t last_w_tm;
+    UT_hash_handle hh;
+};
+
+struct tcp_s {
+    int cid;
+    struct sockaddr_in s_addr;
+    uv_tcp_t *serv;
+    uv_loop_t *loop;
+    tcp_connection_t *conns;
+    void *data;
+    tcp_option_t opts;
+    on_tcp_accept_t on_accept;
+    on_tcp_connect_t on_connect;
+    on_tcp_recv_t on_recv;
+    on_tcp_close_t on_close;
+};
 
 /* -------------------------------------------------------------------------- */
 /*                             connection manager                             */
@@ -42,7 +71,6 @@ typedef struct {
     tcp_t *tcp;
     struct sockaddr_in addr;
     int conn_id;
-    // uint16_t port;
 } connect_req_t;
 
 typedef struct {
@@ -63,8 +91,13 @@ static void free_write_req(uv_write_t *req) {
 }
 
 static void alloc_buffer(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf) {
-    // suggested_size = 1024;  // TODO:
+    tcp_connection_t *conn = (tcp_connection_t *)handle->data;
+    assert(conn);
+    tcp_t *tcp = conn->tcp;
+    assert(tcp);
+    suggested_size = tcp->opts.read_buf_size;
     buf->base = (char *)_CALLOC(1, suggested_size);
+    _CHECK_OOM(buf->base);
     buf->len = suggested_size;
 }
 
@@ -81,10 +114,8 @@ static void free_conn(tcp_connection_t *conn) {
 
 static void on_tcp_close(uv_handle_t *handle) {
     _LOG("on_tcp_close");
-
     int r = uv_read_stop((uv_stream_t *)handle);
     IF_UV_ERROR(r, "stop read error when on close connection", {});
-
     tcp_connection_t *conn = (tcp_connection_t *)handle->data;
     if (!conn) {
         _LOG("on_tcp_close conn is NULL");
@@ -92,13 +123,11 @@ static void on_tcp_close(uv_handle_t *handle) {
     }
     tcp_t *tcp = conn->tcp;
     assert(tcp);
-
     if (tcp->on_close) {
         tcp->on_close(tcp, conn->id);
     }
     _LOG("on_tcp_close ok %d", conn->id);
     free_conn(conn);
-
 on_uv_close_end:
     _FREE_IF(handle);
 }
@@ -126,19 +155,16 @@ static void on_tcp_shutdown(uv_shutdown_t *req, int status) {
 
 static void on_tcp_write(uv_write_t *req, int status) {
     _LOG("on_tcp_write");
-
     if (status == UV_ECANCELED) {
         // connection has been closed
         _LOG("connection has been closed when writing");
         free_write_req(req);
         return;
     }
-
     tcp_connection_t *conn = (tcp_connection_t *)req->data;
     assert(conn);
     tcp_t *tcp = conn->tcp;
     assert(tcp);
-
     IF_UV_ERROR(status, "tcp write error", { close_tcp_connection(tcp, conn->id); });
     free_write_req(req);
     if (status >= 0) {
@@ -149,7 +175,6 @@ static void on_tcp_write(uv_write_t *req, int status) {
 
 static void on_tcp_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
     _LOG("on_tcp_read");
-
     tcp_connection_t *conn = (tcp_connection_t *)cli->data;
     assert(conn);
     tcp_t *tcp = conn->tcp;
@@ -164,12 +189,11 @@ static void on_tcp_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
         if (nread != UV_EOF) _ERR("tcp read error %s", uv_err_name(nread));
         close_tcp_connection(tcp, conn->id);
     }
-
     free(buf->base);
     _LOG("on_tcp_read id: %d n: %ld", conn->id, nread);
 }
 
-static tcp_connection_t *init_conn(int id, uv_tcp_t *cli, tcp_t *tcp, char mode, void *data) {
+static tcp_connection_t *init_conn(int id, uv_tcp_t *cli, tcp_t *tcp, tcp_conn_mode_t mode, void *data) {
     if (!cli || !tcp || id <= 0) {
         return NULL;
     }
@@ -181,7 +205,6 @@ static tcp_connection_t *init_conn(int id, uv_tcp_t *cli, tcp_t *tcp, char mode,
     conn->data = data;
     conn->mode = mode;
     conn->last_r_tm = conn->last_w_tm = mstime();
-
     cli->data = conn;
     int r = uv_read_start((uv_stream_t *)cli, alloc_buffer, on_tcp_read);
     IF_UV_ERROR(r, "tcp start read error", {
@@ -198,24 +221,20 @@ static void on_tcp_connect(uv_connect_t *req, int status) {
     connect_req_t *connect_req = (connect_req_t *)req;
     tcp_t *tcp = connect_req->tcp;
     assert(tcp);
-
     IF_UV_ERROR(status, "tcp client connect error", {
         close_conn(cli);
         goto on_tcp_connect_end;
     });
-
-    tcp_connection_t *conn = init_conn(connect_req->conn_id, cli, tcp, TCP_CONN_MODE_CLI, connect_req->data);
+    tcp_connection_t *conn = init_conn(connect_req->conn_id, cli, tcp, tcp_conn_mode_client, connect_req->data);
     if (!conn) {
         close_conn(cli);
         goto on_tcp_connect_end;
     }
     conn->c_addr = connect_req->addr;
     add_conn(tcp, conn);
-
     if (tcp->on_connect) {
         tcp->on_connect(tcp, conn->id);
     }
-
 on_tcp_connect_end:
     _FREE_IF(req);
 }
@@ -236,7 +255,7 @@ static void on_tcp_accept(uv_stream_t *server, int status) {
         close_conn(cli);
         return;
     });
-    tcp_connection_t *conn = init_conn(gen_conn_id(tcp), cli, tcp, TCP_CONN_MODE_SERV, NULL);
+    tcp_connection_t *conn = init_conn(gen_conn_id(tcp), cli, tcp, tcp_conn_mode_server, NULL);
     if (!conn) {
         _ERR("init tcp connection error");
         close_conn(cli);
@@ -258,14 +277,12 @@ void close_tcp_connection(tcp_t *tcp, int conn_id) {
     if (!tcp || !tcp->conns || conn_id <= 0) {
         return;
     }
-    // tcp_connection_t *conn = get_conn(tcp, conn_id);
-    // if (!conn) {
-    //     return;
-    // }
-    IF_GET_TCP_CONN(conn, tcp, conn_id, { return; });
-
+    tcp_connection_t *conn = get_conn(tcp, conn_id);
+    if (!conn) {
+        _ERR("tcp connection does not exist %d when close", conn_id);
+        return;
+    }
     assert(conn->cli);
-
     close_conn(conn->cli);
     _LOG("close_tcp_connection end %d", conn_id);
 }
@@ -278,7 +295,7 @@ void free_tcp(tcp_t *tcp) {
 }
 
 tcp_t *init_tcp(uv_loop_t *loop, void *data, on_tcp_accept_t on_accept, on_tcp_connect_t on_connect,
-                on_tcp_recv_t on_recv, on_tcp_close_t on_close) {
+                on_tcp_recv_t on_recv, on_tcp_close_t on_close, const tcp_option_t *opts) {
     if (!loop) {
         return NULL;
     }
@@ -292,6 +309,11 @@ tcp_t *init_tcp(uv_loop_t *loop, void *data, on_tcp_accept_t on_accept, on_tcp_c
     tcp->on_connect = on_connect;
     tcp->on_recv = on_recv;
     tcp->data = data;
+    tcp->opts.backlog = def_backlog;
+    tcp->opts.read_buf_size = def_read_buf_size;
+    if (opts) {
+        tcp->opts = *opts;
+    }
     return tcp;
 }
 
@@ -299,12 +321,10 @@ void stop_tcp_server(tcp_t *tcp) {
     if (!tcp) {
         return;
     }
-
     if (!tcp->serv) {
         free_tcp(tcp);
         return;
     }
-
     int r = uv_read_stop((uv_stream_t *)tcp->serv);
     IF_UV_ERROR(r, "tcp server stop read error", {});
     uv_shutdown_t *req = (uv_shutdown_t *)_CALLOC(1, sizeof(uv_shutdown_t));
@@ -341,7 +361,7 @@ bool start_tcp_server_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr) {
         return false;
     });
     serv->data = tcp;
-    r = uv_listen((uv_stream_t *)serv, DEF_BACKLOG, on_tcp_accept);
+    r = uv_listen((uv_stream_t *)serv, tcp->opts.backlog, on_tcp_accept);
     IF_UV_ERROR(r, "init tcp server listen error", {
         _FREE_IF(serv);
         return false;
@@ -369,11 +389,9 @@ int connect_tcp_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr, void *dat
     _CHECK_OOM(cli);
     int r = uv_tcp_init(tcp->loop, cli);
     IF_UV_ERROR(r, "tcp connect error", {
-        // uv_close((uv_handle_t *)cli, on_tcp_close);
         close_conn(cli);
         return 0;
     });
-
     connect_req_t *connect_req = (connect_req_t *)_CALLOC(1, sizeof(connect_req_t));
     connect_req->data = data;
     connect_req->addr = sockaddr;
@@ -382,11 +400,9 @@ int connect_tcp_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr, void *dat
     r = uv_tcp_connect((uv_connect_t *)connect_req, cli, (const struct sockaddr *)&sockaddr, on_tcp_connect);
     IF_UV_ERROR(r, "tcp connect error", {
         _FREE_IF(connect_req);
-        // uv_close((uv_handle_t *)cli, on_tcp_close);
         close_conn(cli);
         return 0;
     });
-
     return connect_req->conn_id;
 }
 
@@ -397,7 +413,6 @@ int connect_tcp(tcp_t *tcp, const char *ip, uint16_t port, void *data) {
     struct sockaddr_in sockaddr;
     int r = uv_ip4_addr(ip, port, &sockaddr);
     IF_UV_ERROR(r, "ipv4 addr error", { return false; });
-
     return connect_tcp_with_sockaddr(tcp, sockaddr, data);
 }
 
@@ -406,23 +421,19 @@ bool tcp_send(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) {
     if (!tcp || conn_id <= 0 || !buf || size <= 0) {
         return false;
     }
-
     tcp_connection_t *conn = get_conn(tcp, conn_id);
     if (!conn) {
         return false;
     }
-
     if (uv_is_closing((uv_handle_t *)conn->cli)) {
         _LOG("closing...... when send id: %d", conn_id);
         return false;
     }
-
     write_req_t *req = (write_req_t *)malloc(sizeof(write_req_t));
     char *wbuf = (char *)_CALLOC(1, size);
     memcpy(wbuf, buf, size);
     req->buf = uv_buf_init((char *)wbuf, size);
     req->req.data = conn;
-
     int r = uv_write((uv_write_t *)req, (uv_stream_t *)conn->cli, &req->buf, 1, on_tcp_write);
     IF_UV_ERROR(r, "tcp send error", {
         free_write_req((uv_write_t *)req);
@@ -432,14 +443,45 @@ bool tcp_send(tcp_t *tcp, int conn_id, const char *buf, ssize_t size) {
     return true;
 }
 
-tcp_connection_t *get_tcp_connection(tcp_t *tcp, int conn_id) {
+bool is_tcp_connection(tcp_t *tcp, int conn_id) {
+    tcp_connection_t *conn = get_conn(tcp, conn_id);
+    return conn ? true : false;
+}
+
+void *get_tcp_conn_data(tcp_t *tcp, int conn_id) {
     tcp_connection_t *conn = get_conn(tcp, conn_id);
     if (!conn) {
         return NULL;
     }
-    if (uv_is_closing((uv_handle_t *)conn->cli)) {
-        _LOG("closing...... when get tcp conn %d", conn_id);
-        // return NULL;
+    return conn->data;
+}
+
+void set_tcp_conn_data(tcp_t *tcp, int conn_id, void *data) {
+    tcp_connection_t *conn = get_conn(tcp, conn_id);
+    if (!conn) {
+        return;
     }
-    return conn;
+    conn->data = data;
+}
+
+tcp_conn_mode_t get_tcp_conn_mode(tcp_t *tcp, int conn_id) {
+    tcp_connection_t *conn = get_conn(tcp, conn_id);
+    if (!conn) {
+        return tcp_conn_mode_none;
+    }
+    return conn->mode;
+}
+
+void set_tcp_data(tcp_t *tcp, void *data) {
+    if (!tcp) {
+        return;
+    }
+    tcp->data = data;
+}
+
+void *get_tcp_data(tcp_t *tcp) {
+    if (!tcp) {
+        return NULL;
+    }
+    return tcp->data;
 }
