@@ -8,15 +8,6 @@
 
 #define TCP_MAX_IP_LEN 46
 
-/*
-#define IF_GET_TCP_CONN(_V_CONN, _V_TCP, _V_CONN_ID, _ACT)                    \
-    tcp_connection_t *(_V_CONN) = get_tcp_connection((_V_TCP), (_V_CONN_ID)); \
-    if (!(_V_CONN)) {                                                         \
-        _LOG("tcp connection does not exist %d", (_V_CONN_ID));               \
-        _ACT                                                                  \
-    }
-*/
-
 typedef struct tcp_s tcp_t;
 
 typedef void (*on_tcp_accept_t)(tcp_t *tcp, int conn_id);
@@ -28,6 +19,7 @@ typedef enum { tcp_conn_mode_none = 0, tcp_conn_mode_server, tcp_conn_mode_clien
 
 typedef struct {
     int backlog;
+    size_t read_buf_size;
 } tcp_option_t;
 
 tcp_t *init_tcp(uv_loop_t *loop, void *data, on_tcp_accept_t on_accept, on_tcp_connect_t on_connect,

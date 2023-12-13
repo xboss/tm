@@ -343,7 +343,7 @@ n2n_t *n2n_init_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_p
     if (!loop || !listen_ip || listen_port <= 0) {
         return NULL;
     }
-    tcp_option_t opts = {.backlog = 128};
+    tcp_option_t opts = {.backlog = 128, .read_buf_size = 65536};
     tcp_t *tcp = init_tcp(loop, NULL, on_front_accept, on_backend_connect, on_tcp_recv, on_tcp_close, &opts);
     if (!tcp) {
         return NULL;
