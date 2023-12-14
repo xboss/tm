@@ -14,10 +14,10 @@ typedef struct {
 
 static tm_config_t config;
 
-#define PRT_USAGE(_e_msg)                                                                    \
-    _ERR("error: %s", _e_msg);                                                               \
-    _ERR("Usage: tm <mode> <password> <listen ip> <listen port> [remote ip] [remote port]"); \
-    _ERR("        <mode>: local or socks5")
+#define PRT_USAGE(_e_msg)                                                                        \
+    _ERR("%s", _e_msg);                                                                          \
+    printf("Usage: tm <mode> <password> <listen ip> <listen port> [remote ip] [remote port]\n"); \
+    printf("        <mode>: local or socks5")
 
 static int parse_args(int argc, char const *argv[]) {
     if (argc < 4 || !argv[1] || !argv[2] || !argv[3] || !argv[4]) {

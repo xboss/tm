@@ -7,6 +7,7 @@
 /*                                   server                                   */
 /* -------------------------------------------------------------------------- */
 #define SS5_VER 0x05U
+#define SS5_AUTH_NP_VER 0x01U
 #define SS5_CMD_CONNECT 0x01U
 #define SS5_CMD_BIND 0x02U
 #define SS5_CMD_UDP_ASSOCIATE 0x03U
@@ -204,9 +205,10 @@ static void ss5_auth(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
         n2n_close_conn(n2n, n2n_conn->conn_id);
         return;
     }
-    u_char nmethods = buf[1];
+    int nmethods = (int)buf[1];
     char ok[2] = {SS5_VER, 0x00};
-    for (u_char i = 0; i < nmethods; i++) {
+    for (int i = 0; i < nmethods; i++) {
+        // TODO: config auth mode
         if (buf[2 + i] == 0x00) {
             // NO AUTHENTICATION REQUIRED
             if (!send_to_front(socks5, n2n, n2n_conn->conn_id, ok, 2)) {
@@ -231,23 +233,38 @@ static void ss5_auth(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
 static void ss5_auth_np(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     PREPARE_SS5_INFO;
 
-    if (*buf != SS5_VER || size < 5) {
+    _LOG("ss5_auth_np %d", n2n_conn->conn_id);
+
+    if (*buf != SS5_AUTH_NP_VER || size < 5) {
         _ERR("socks5 auth name password error");
         n2n_close_conn(n2n, n2n_conn->conn_id);
         return;
     }
-    char ok[2] = {SS5_VER, 0x00};
+
+    int name_len = buf[1];
+    assert(name_len >= 0);
+    char tmp[UCHAR_MAX + 1] = {0};
+    memcpy(tmp, buf + 2, name_len);
+    _LOG("name: %s", tmp);
+    int pwd_len = buf[2 + name_len];
+    assert(pwd_len >= 0);
+    memcpy(tmp, buf + 3 + name_len, pwd_len);
+    _LOG("pwd: %s", tmp);
+    // TODO: check name and pwd
+
+    char ok[2] = {SS5_AUTH_NP_VER, 0x00};
     if (!send_to_front(socks5, n2n, n2n_conn->conn_id, ok, 2)) {
         n2n_close_conn(n2n, n2n_conn->conn_id);
     }
     ss5_conn->phase = SS5_PHASE_REQ;
+    _LOG("ss5_auth_np ok %d", n2n_conn->conn_id);
 }
 
 static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     PREPARE_SS5_INFO;
 
     if (*buf != SS5_VER || size < 7) {
-        _ERR("socks5 request error version");
+        _ERR("socks5 request error version %X size: %ld", *buf, size);
         return;
         // goto ss5_auth_req_error;
     }
