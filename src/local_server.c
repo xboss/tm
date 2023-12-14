@@ -12,6 +12,9 @@ struct local_server_s {
 static char iv[CIPHER_IV_LEN + 1] = {0};
 
 static inline bool send_to_back(local_server_t *local, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
+    if (!buf || size <= 0) {
+        return n2n_send_to_back(n2n, conn_id, buf, size);
+    }
     char *cipher_txt = (char *)buf;
     int cipher_txt_len = size;
     if (local->key) {

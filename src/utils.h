@@ -29,6 +29,7 @@
     }
 #endif
 
+/*
 #ifndef _LOG
 #define _LOG(fmt, args...)   \
     do {                     \
@@ -36,20 +37,20 @@
         printf("\n");        \
     } while (0)
 #endif
+*/
 
-/*
 #ifndef _LOG
 #define _LOG(fmt, args...) \
     do {                   \
     } while (0)
 #endif
-*/
 
 #ifndef _ERR
 #define _ERR(fmt, args...)            \
     do {                              \
+        fprintf(stderr, "ERROR: ");   \
         fprintf(stderr, fmt, ##args); \
-        printf("\n");                 \
+        fprintf(stderr, "\n");        \
     } while (0)
 #endif
 

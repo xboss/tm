@@ -308,6 +308,9 @@ static void on_backend_connect(tcp_t *tcp, int conn_id) {
     n2n_t *n2n = (n2n_t *)get_tcp_data(tcp);
     IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, { _LOG("on_backend_connect n2n_conn does not exist %d", conn_id); });
     assert(n2n_conn);
+    if (n2n_conn->status != N2N_CONN_ST_CONNECTING) {
+        _ERR("on_backend_connect conn %d status %d is not connecting", conn_id, n2n_conn->status);  // TODO: debug
+    }
     assert(n2n_conn->status == N2N_CONN_ST_CONNECTING);
     n2n_conn->status = N2N_CONN_ST_ON;
     int couple_id = n2n_conn->couple_id;
