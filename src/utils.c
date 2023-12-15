@@ -26,15 +26,14 @@ char *load_str_file(const char *filename) {
     int r_buf_cnt = 2;
     char *str = (char *)_CALLOC(r_buf_cnt, FILE_R_BUF_SIZE);
     _CHECK_OOM(str);
-    // TODO: _FREE_IF(str);
 
     char buf[FILE_R_BUF_SIZE] = {0};
     char *p = str;
-    int js_len = 0;
+    int rd_len = 0;
     int p_offset = 0;
     while (fgets(buf, FILE_R_BUF_SIZE, fp) != NULL) {
         int len = strlen(buf);
-        if (js_len + len > FILE_R_BUF_SIZE * r_buf_cnt) {
+        if (rd_len + len > FILE_R_BUF_SIZE * r_buf_cnt) {
             // TODO:
             r_buf_cnt *= 2;
             _LOG("realloc read buffer %d", FILE_R_BUF_SIZE * r_buf_cnt);
@@ -45,7 +44,7 @@ char *load_str_file(const char *filename) {
         }
         memcpy(p, buf, len);
         p += len;
-        js_len += len;
+        rd_len += len;
     }
     fclose(fp);
     return str;

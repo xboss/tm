@@ -7,21 +7,29 @@ OUTPUT_DIR = ./build/
 SRC = $(wildcard src/*.c)
 OBJ = $(patsubst src/%.c, %.o, $(SRC))
 OBJ_OUT = $(patsubst src/%.c, $(OUTPUT_DIR)%.o, $(SRC))
-INCLUDE = -I./src
+INCLUDE = -I./src -I./src/cJSON
 LIB = -luv -lssl -lcrypto
+
+CJSON_SRC = $(wildcard src/cJSON/*.c)
+CJSON_OBJ = $(patsubst src/cJSON/%.c, %.o, $(CJSON_SRC))
+CJSON_OBJ_OUT = $(patsubst src/cJSON/%.c, $(OUTPUT_DIR)%.o, $(CJSON_SRC))
 
 # TEST_SRC = $(wildcard test/*.c)
 # TEST_OBJ = $(patsubst test/%.c, %.o, $(TEST_SRC))
 
 .PHONY:all clean test
 
-all: $(OBJ)
-	$(CC) $(OBJ_OUT) -o $(OUTPUT_DIR)tm $(LIB)
+all: $(OBJ)  $(CJSON_OBJ)
+	$(CC) $(OBJ_OUT) $(CJSON_OBJ_OUT) -o $(OUTPUT_DIR)tm $(LIB)
 
 %.o: src/%.c
 	@echo $< $@
 	$(CC) $(INCLUDE) $(CFLAGS) $(CDEBUG) $< -o $(OUTPUT_DIR)$@
 
+%.o: ./src/cJSON/%.c
+	@echo $< $@
+	$(CC) $(INCLUDE) $(CFLAGS) $(CDEBUG) $< -o $(OUTPUT_DIR)$@
+	
 clean:
 	rm -rf $(OUTPUT_DIR)*
 
