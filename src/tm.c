@@ -51,6 +51,7 @@ static bool load_config(const char *filename, tm_config_t *config) {
         return false;
     }
     cJSON *m_json = cJSON_Parse(json_str);
+    _FREE_IF(json_str);
     if (m_json == NULL) {
         _ERR("config file parse error");
         return false;
@@ -155,6 +156,7 @@ static bool load_config(const char *filename, tm_config_t *config) {
         }
     }
 
+    cJSON_Delete(m_json);
     return true;
 }
 
