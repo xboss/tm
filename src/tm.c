@@ -166,7 +166,7 @@ static bool load_config(const char *filename, tm_config_t *config) {
 
 #define PRT_USAGE(_e_msg) \
     _ERR("%s", _e_msg);   \
-    printf("Usage: tm <config file>\n");
+    printf("Usage: tm <configfile>\n");
 
 static tm_config_t config;
 
