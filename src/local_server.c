@@ -131,6 +131,7 @@ local_server_t *init_local_server(uv_loop_t *loop, const char *listen_ip, uint16
         _LOG("start cipher mode %s", local->key);
     }
 
+    _LOG("local server is started, listen on %s:%u, target is %s:%u", listen_ip, listen_port, target_ip, target_port);
     return local;
 }
 

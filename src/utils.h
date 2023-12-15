@@ -29,7 +29,7 @@
     }
 #endif
 
-/*
+#ifdef DEBUG
 #ifndef _LOG
 #define _LOG(fmt, args...)   \
     do {                     \
@@ -37,12 +37,12 @@
         printf("\n");        \
     } while (0)
 #endif
-*/
-
+#else
 #ifndef _LOG
 #define _LOG(fmt, args...) \
     do {                   \
     } while (0)
+#endif
 #endif
 
 #ifndef _ERR

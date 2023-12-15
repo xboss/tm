@@ -1,5 +1,7 @@
 #include "tcp.h"
 
+#include <limits.h>
+
 #include "utils.h"
 
 const int def_backlog = 128;

@@ -43,6 +43,8 @@ struct socks5_server_s {
     uv_loop_t *loop;
     n2n_t *n2n;
     char *key;
+    int socks5_auth_mode;  // 0:no auth; 1:username/password
+    on_auth_socks5_user_t on_auth_socks5_user;
 };
 
 typedef struct {
@@ -208,53 +210,79 @@ static void ss5_auth(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     int nmethods = (int)buf[1];
     char ok[2] = {SS5_VER, 0x00};
     for (int i = 0; i < nmethods; i++) {
-        // TODO: config auth mode
-        if (buf[2 + i] == 0x00) {
+        if (buf[2 + i] == 0x00 && socks5->socks5_auth_mode == 0) {
             // NO AUTHENTICATION REQUIRED
             if (!send_to_front(socks5, n2n, n2n_conn->conn_id, ok, 2)) {
                 n2n_close_conn(n2n, n2n_conn->conn_id);
+                return;
             } else {
                 ss5_conn->phase = SS5_PHASE_REQ;
             }
             break;
-        } else if (buf[2 + i] == 0x02) {
+        } else if (buf[2 + i] == 0x02 && socks5->socks5_auth_mode == 1) {
             // USERNAME/PASSWORD
             ok[1] = 0x02;
             if (!send_to_front(socks5, n2n, n2n_conn->conn_id, ok, 2)) {
                 n2n_close_conn(n2n, n2n_conn->conn_id);
+                return;
             } else {
                 ss5_conn->phase = SS5_PHASE_AUTH_NP;
             }
             break;
         }
     }
+    if (ss5_conn->phase == SS5_PHASE_AUTH) {
+        n2n_close_conn(n2n, n2n_conn->conn_id);
+        return;
+    }
 }
 
 static void ss5_auth_np(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     PREPARE_SS5_INFO;
-
     _LOG("ss5_auth_np %d", n2n_conn->conn_id);
-
     if (*buf != SS5_AUTH_NP_VER || size < 5) {
         _ERR("socks5 auth name password error");
         n2n_close_conn(n2n, n2n_conn->conn_id);
         return;
     }
-
     int name_len = buf[1];
-    assert(name_len >= 0);
-    char tmp[UCHAR_MAX + 1] = {0};
-    memcpy(tmp, buf + 2, name_len);
-    _LOG("name: %s", tmp);
-    int pwd_len = buf[2 + name_len];
-    assert(pwd_len >= 0);
-    memcpy(tmp, buf + 3 + name_len, pwd_len);
-    _LOG("pwd: %s", tmp);
-    // TODO: check name and pwd
-
-    char ok[2] = {SS5_AUTH_NP_VER, 0x00};
-    if (!send_to_front(socks5, n2n, n2n_conn->conn_id, ok, 2)) {
+    if (name_len < 0) {
+        _ERR("socks5 auth name length error");
         n2n_close_conn(n2n, n2n_conn->conn_id);
+        return;
+    }
+    // assert(name_len >= 0);
+    int pwd_len = buf[2 + name_len];
+    if (pwd_len < 0) {
+        _ERR("socks5 auth password length error");
+        n2n_close_conn(n2n, n2n_conn->conn_id);
+        return;
+    }
+    // assert(pwd_len >= 0);
+    // char tmp[UCHAR_MAX + 1] = {0};
+    // char *name = _CALLOC(1, name_len + 1);
+    // _CHECK_OOM(name);
+    // memcpy(tmp, buf + 2, name_len);
+    // _LOG("name: %s", name);
+    // char *pwd = _CALLOC(1, pwd_len + 1);
+    // _CHECK_OOM(pwd);
+    // memcpy(pwd, buf + 3 + name_len, pwd_len);
+    // _LOG("pwd: %s", pwd);
+    int auth_rt = 0;
+    if (socks5->on_auth_socks5_user) {
+        auth_rt =
+            socks5->on_auth_socks5_user((const char *)(buf + 2), name_len, (const char *)(buf + 3 + name_len), pwd_len);
+    }
+    // _FREE_IF(name);
+    // _FREE_IF(pwd);
+    char msg[2] = {SS5_AUTH_NP_VER, 0x00};
+    if (auth_rt != 0) {
+        msg[1] = 0x01;
+    }
+    if (!send_to_front(socks5, n2n, n2n_conn->conn_id, msg, 2) || auth_rt != 0) {
+        _LOG("ss5_auth_np error %d", n2n_conn->conn_id);
+        n2n_close_conn(n2n, n2n_conn->conn_id);
+        return;
     }
     ss5_conn->phase = SS5_PHASE_REQ;
     _LOG("ss5_auth_np ok %d", n2n_conn->conn_id);
@@ -461,7 +489,8 @@ void on_n2n_backend_connect(n2n_t *n2n, int conn_id) {
 /*                                   public                                   */
 /* -------------------------------------------------------------------------- */
 
-socks5_server_t *init_socks5_server(uv_loop_t *loop, const char *ip, uint16_t port, const char *pwd) {
+socks5_server_t *init_socks5_server(uv_loop_t *loop, const char *ip, uint16_t port, const char *pwd,
+                                    int socks5_auth_mode, on_auth_socks5_user_t on_auth_socks5_user) {
     if (!loop || !ip || port <= 0) {
         return NULL;
     }
@@ -475,12 +504,13 @@ socks5_server_t *init_socks5_server(uv_loop_t *loop, const char *ip, uint16_t po
     n2n->data = socks5;
     socks5->loop = loop;
     socks5->n2n = n2n;
-
+    socks5->socks5_auth_mode = socks5_auth_mode;
+    socks5->on_auth_socks5_user = on_auth_socks5_user;
     if (pwd) {
         socks5->key = pwd2key(pwd);
         _LOG("start cipher mode %s", socks5->key);
     }
-
+    _LOG("socks5 server is started, listen on %s:%u", ip, port);
     return socks5;
 }
 
