@@ -89,7 +89,8 @@ static inline bool send_to_front(socks5_server_t *socks5, n2n_t *n2n, int conn_i
     char *cipher_txt = (char *)buf;
     int cipher_txt_len = size;
     if (socks5->key) {
-        bzero(iv, CIPHER_IV_LEN);
+        // bzero(iv, CIPHER_IV_LEN);
+        memset(iv, 0, CIPHER_IV_LEN);
         cipher_txt = aes_encrypt(socks5->key, iv, buf, size, &cipher_txt_len);
     }
 
@@ -401,7 +402,8 @@ void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     char *plan_txt = (char *)buf;
     int plan_txt_len = size;
     if (socks5->key) {
-        bzero(iv, CIPHER_IV_LEN);
+        // bzero(iv, CIPHER_IV_LEN);
+        memset(iv, 0, CIPHER_IV_LEN);
         plan_txt = aes_decrypt(socks5->key, iv, buf, size, &plan_txt_len);
     }
     // _PR(plan_txt, plan_txt_len);
