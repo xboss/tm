@@ -219,7 +219,8 @@ static int on_auth_socks5_user(const char *name, int name_len, const char *pwd, 
 
 int main(int argc, char const *argv[]) {
     uv_loop_t *loop = uv_default_loop();
-    bzero(&config, sizeof(tm_config_t));
+    // bzero(&config, sizeof(tm_config_t));
+    memset(&config, 0, sizeof(tm_config_t));
 
     if (argc < 2 || !argv[1]) {
         PRT_USAGE("invalid parameter");

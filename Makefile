@@ -3,6 +3,8 @@ CFLAGS = -c -Wno-deprecated-declarations
 # CFLAGS = -c -Wall
 CDEBUG = -g -DDEBUG
 # CDEBUG = -g 
+SHARED = -fPIC --shared
+
 OUTPUT_DIR = ./build/
 SRC = $(wildcard src/*.c)
 OBJ = $(patsubst src/%.c, %.o, $(SRC))
@@ -32,6 +34,9 @@ all: $(OBJ)  $(CJSON_OBJ)
 	
 clean:
 	rm -rf $(OUTPUT_DIR)*
+
+lib:$(OBJ)  $(CJSON_OBJ)
+	$(CC) $(SHARED) $(OBJ_OUT) $(CJSON_OBJ_OUT) -o $(OUTPUT_DIR)libtm.so $(LIB)
 
 test:
 	$(CC) $(INCLUDE) $(CDEBUG) $(LIB) ./src/utils.c ./src/tcp.c  ./test/test_server.c -o $(OUTPUT_DIR)test_server 
