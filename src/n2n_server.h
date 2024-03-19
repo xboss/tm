@@ -46,7 +46,7 @@ struct n2n_conn_s {
     uint64_t start_connect_tm;  // unit: millisecond
     int status;
     uint64_t last_r_tm;
-    // uint64_t last_w_tm;
+    uint64_t last_w_tm;
     void *data;
     n2n_t *n2n;
 
@@ -79,7 +79,7 @@ n2n_t *n2n_init_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_p
                        on_n2n_front_recv_t on_n2n_front_recv, on_n2n_backend_recv_t on_n2n_backend_recv,
                        on_n2n_backend_connect_t on_n2n_backend_connect);
 void n2n_free_server(n2n_t *n2n);
-bool n2n_server_set_opts(n2n_t *n2n, int keepalive, uint64_t connect_timeout);
+bool n2n_server_set_opts(n2n_t *n2n, int r_keepalive, int w_keepalive, uint64_t connect_timeout);
 int n2n_connect_backend(n2n_t *n2n, struct sockaddr_in sockaddr, int couple_id, void *data);
 bool n2n_send_to_front(n2n_t *n2n, int conn_id, const char *buf, ssize_t size);
 bool n2n_send_to_back(n2n_t *n2n, int conn_id, const char *buf, ssize_t size);

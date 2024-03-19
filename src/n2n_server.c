@@ -216,13 +216,23 @@ static void on_conn_timer(uv_timer_t *handle) {
     IF_GET_N2N_CONN(n2n_conn, n2n, conn_id, { _LOG("on_conn_timer n2n_conn does not exist %d", conn_id); });
     assert(n2n_conn);
     assert(n2n_conn->status != N2N_CONN_ST_OFF);
-    if (n2n_conn && n2n_conn->start_connect_tm > 0 && now - n2n_conn->start_connect_tm > n2n->connect_timeout) {
+    if (n2n_conn && n2n_conn->status == N2N_CONN_ST_CONNECTING && n2n_conn->start_connect_tm > 0 &&
+        now - n2n_conn->start_connect_tm > n2n->connect_timeout) {
         _LOG("on_conn_timer connect timeout %llu", now - n2n_conn->start_connect_tm);
         goto on_conn_timer_timout;
     }
 
-    if (n2n_conn && (now - n2n_conn->last_r_tm) > n2n->r_keepalive * 1000L) {
-        _LOG("on_conn_timer read timeout %llu", now - n2n_conn->last_r_tm);
+    uint64_t last_r_tm = get_tcp_conn_last_r_tm(n2n->tcp, conn_id);
+    uint64_t last_w_tm = get_tcp_conn_last_w_tm(n2n->tcp, conn_id);
+    // _LOG("on_conn_timer tcp now:%llu last_r_tm:%llu last_w_tm:%llu cid:%d", now, last_r_tm, last_w_tm,
+    //      n2n_conn->conn_id);
+    last_r_tm = n2n_conn->last_r_tm > last_r_tm ? n2n_conn->last_r_tm : last_r_tm;
+    last_w_tm = n2n_conn->last_w_tm > last_w_tm ? n2n_conn->last_w_tm : last_w_tm;
+    // _LOG("on_conn_timer real now:%llu last_r_tm:%llu last_w_tm:%llu cid:%d", now, last_r_tm, last_w_tm,
+    //      n2n_conn->conn_id);
+    if (n2n_conn && (now - last_r_tm) > n2n->r_keepalive * 1000L && (now - last_w_tm) > n2n->w_keepalive * 1000L) {
+        _LOG("on_conn_timer rw timeout r:%llu w:%llu cid:%d cpid:%d", now - last_r_tm, now - last_w_tm,
+             n2n_conn->conn_id, n2n_conn->couple_id);
         goto on_conn_timer_timout;
     }
     return;
@@ -336,7 +346,7 @@ static void on_backend_connect(tcp_t *tcp, int conn_id) {
 /*                                 n2n server                                 */
 /* -------------------------------------------------------------------------- */
 
-static const int def_keepalive = 30;
+static const int def_keepalive = 300;
 static const uint64_t def_connect_timeout = 60000UL;
 
 n2n_t *n2n_init_server(uv_loop_t *loop, const char *listen_ip, uint16_t listen_port, const char *target_ip,
@@ -397,12 +407,12 @@ void n2n_free_server(n2n_t *n2n) {
     free(n2n);
 }
 
-bool n2n_server_set_opts(n2n_t *n2n, int keepalive, uint64_t connect_timeout) {
+bool n2n_server_set_opts(n2n_t *n2n, int r_keepalive, int w_keepalive, uint64_t connect_timeout) {
     if (!n2n) {
         return false;
     }
-    n2n->r_keepalive = keepalive;
-    n2n->w_keepalive = keepalive;
+    n2n->r_keepalive = r_keepalive;
+    n2n->w_keepalive = w_keepalive;
     n2n->connect_timeout = connect_timeout;
     return true;
 }
@@ -440,6 +450,8 @@ bool n2n_send_to_front(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
     if (!rt) {
         return false;
     }
+
+    n2n_conn->last_w_tm = mstime();
     return true;
 }
 
@@ -493,6 +505,7 @@ bool n2n_send_to_back(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
         }
     }
 
+    n2n_conn->last_w_tm = mstime();
     return true;
 }
 

@@ -41,5 +41,7 @@ bool is_tcp_connection(tcp_t *tcp, int conn_id);
 void *get_tcp_conn_data(tcp_t *tcp, int conn_id);
 void set_tcp_conn_data(tcp_t *tcp, int conn_id, void *data);
 tcp_conn_mode_t get_tcp_conn_mode(tcp_t *tcp, int conn_id);
+uint64_t get_tcp_conn_last_r_tm(tcp_t *tcp, int conn_id);
+uint64_t get_tcp_conn_last_w_tm(tcp_t *tcp, int conn_id);
 
 #endif  // TCP_H

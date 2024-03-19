@@ -151,8 +151,8 @@ void on_resolved(uv_getaddrinfo_t *req, int status, struct addrinfo *res) {
         // ipv4
         in_port_t sin_port = ss5_conn->target_addr.sin_port;
 
-        uint16_t port = ntohs(sin_port);  // TODO: test
-        _LOG("port: %u", port);
+        // uint16_t port = ntohs(sin_port);  // TODO: test
+        // _LOG("port: %u", port);
 
         ss5_conn->target_addr = (*(struct sockaddr_in *)res->ai_addr);
         ss5_conn->target_addr.sin_port = sin_port;
@@ -409,7 +409,7 @@ void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     // _PR(plan_txt, plan_txt_len);
 
     n2n_t *n2n = n2n_conn->n2n;
-    int conn_id = n2n_conn->conn_id;
+    // int conn_id = n2n_conn->conn_id;
     switch (ss5_conn->phase) {
         case SS5_PHASE_AUTH:
             ss5_auth((const u_char *)plan_txt, plan_txt_len, n2n_conn);
@@ -421,7 +421,7 @@ void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
             ss5_req((const u_char *)plan_txt, plan_txt_len, n2n_conn);
             break;
         case SS5_PHASE_DATA:
-            _LOG("phase data send id: %d", conn_id);
+            // _LOG("phase data send id: %d", conn_id);
             if (!n2n_send_to_back(n2n, n2n_conn->couple_id, plan_txt, plan_txt_len)) {
                 n2n_close_conn(n2n, n2n_conn->couple_id);
             }

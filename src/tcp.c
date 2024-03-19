@@ -41,7 +41,7 @@ struct tcp_s {
 
 static tcp_connection_t *get_conn(tcp_t *tcp, int conn_id) {
     if (conn_id <= 0 || !tcp || !tcp->conns) {
-        return false;
+        return NULL;
     }
     tcp_connection_t *c = NULL;
     HASH_FIND_INT(tcp->conns, &conn_id, c);
@@ -171,8 +171,9 @@ static void on_tcp_write(uv_write_t *req, int status) {
     free_write_req(req);
     if (status >= 0) {
         conn->last_w_tm = mstime();
+        _LOG("on_tcp_write last_w_tm:%llu", conn->last_w_tm);  // TODO:  debug
     }
-    _LOG("on_tcp_write id: %d", conn->id);
+    _LOG("on_tcp_write id: %d status: %d", conn->id, status);
 }
 
 static void on_tcp_read(uv_stream_t *cli, ssize_t nread, const uv_buf_t *buf) {
@@ -486,4 +487,20 @@ void *get_tcp_data(tcp_t *tcp) {
         return NULL;
     }
     return tcp->data;
+}
+
+uint64_t get_tcp_conn_last_r_tm(tcp_t *tcp, int conn_id) {
+    tcp_connection_t *conn = get_conn(tcp, conn_id);
+    if (!conn) {
+        return 0;
+    }
+    return conn->last_r_tm;
+}
+
+uint64_t get_tcp_conn_last_w_tm(tcp_t *tcp, int conn_id) {
+    tcp_connection_t *conn = get_conn(tcp, conn_id);
+    if (!conn) {
+        return 0;
+    }
+    return conn->last_w_tm;
 }
