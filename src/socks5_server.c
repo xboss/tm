@@ -149,7 +149,7 @@ void on_resolved(uv_getaddrinfo_t *req, int status, struct addrinfo *res) {
 
     if (res->ai_family == AF_INET) {
         // ipv4
-        in_port_t sin_port = ss5_conn->target_addr.sin_port;
+        uint16_t sin_port = ss5_conn->target_addr.sin_port;
 
         // uint16_t port = ntohs(sin_port);  // TODO: test
         // _LOG("port: %u", port);
@@ -317,7 +317,7 @@ static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
         memcpy(ss5_conn->raw, buf, size);
         // struct sockaddr_in addr;
         ss5_conn->target_addr.sin_family = AF_INET;
-        ss5_conn->target_addr.sin_addr.s_addr = *(in_addr_t *)(buf + 4);
+        ss5_conn->target_addr.sin_addr.s_addr = *(uint32_t *)(buf + 4);
         memcpy(&(ss5_conn->target_addr.sin_port), buf + 8, sizeof(ss5_conn->target_addr.sin_port));
         socks5_conn_t *new_ss5_conn = clone_ss5_conn(ss5_conn);
         int bk_id = n2n_connect_backend(n2n, ss5_conn->target_addr, n2n_conn->conn_id, new_ss5_conn);

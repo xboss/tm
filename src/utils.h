@@ -7,6 +7,10 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#ifdef _WIN32
+#define strncasecmp strnicmp
+#endif
+
 #ifndef _FREE_IF
 #define _FREE_IF(p)     \
     do {                \
@@ -31,26 +35,26 @@
 
 #ifdef DEBUG
 #ifndef _LOG
-#define _LOG(fmt, args...)   \
-    do {                     \
-        printf(fmt, ##args); \
-        printf("\n");        \
+#define _LOG(fmt, ...)              \
+    do {                            \
+        printf(fmt, ##__VA_ARGS__); \
+        printf("\n");               \
     } while (0)
 #endif
 #else
 #ifndef _LOG
-#define _LOG(fmt, args...) \
-    do {                   \
+#define _LOG(fmt, ...) \
+    do {               \
     } while (0)
 #endif
 #endif
 
 #ifndef _ERR
-#define _ERR(fmt, args...)            \
-    do {                              \
-        fprintf(stderr, "ERROR: ");   \
-        fprintf(stderr, fmt, ##args); \
-        fprintf(stderr, "\n");        \
+#define _ERR(fmt, ...)                       \
+    do {                                     \
+        fprintf(stderr, "ERROR: ");          \
+        fprintf(stderr, fmt, ##__VA_ARGS__); \
+        fprintf(stderr, "\n");               \
     } while (0)
 #endif
 

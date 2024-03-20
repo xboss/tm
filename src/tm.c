@@ -172,9 +172,11 @@ static tm_config_t config;
 
 static void signal_handler(uv_signal_t *handle, int signum) {
     _LOG("signal %d", signum);
+#ifndef _WIN32
     if (SIGPIPE == signum) {
         return;
     }
+#endif
     if (SIGINT == signum) {
         uv_stop(handle->loop);
         _LOG("stop loop");
@@ -260,13 +262,22 @@ int main(int argc, char const *argv[]) {
         return 1;
     }
 
-    uv_signal_t *sig = (uv_signal_t *)_CALLOC(1, sizeof(uv_signal_t));
-    _CHECK_OOM(sig);
-    if (!init_signal(loop, sig, SIGPIPE) || !init_signal(loop, sig, SIGINT)) {
-        _ERR("init signal error");
-        _FREE_IF(sig);
+    uv_signal_t *sig_int = (uv_signal_t *)_CALLOC(1, sizeof(uv_signal_t));
+    _CHECK_OOM(sig_int);
+    if (!init_signal(loop, sig_int, SIGINT)) {
+        _ERR("init signal int error");
+        _FREE_IF(sig_int);
         return 1;
     }
+#ifndef _WIN32
+    uv_signal_t *sig_pipe = (uv_signal_t *)_CALLOC(1, sizeof(uv_signal_t));
+    _CHECK_OOM(sig_pipe);
+    if (!init_signal(loop, sig_pipe, SIGPIPE)) {
+        _ERR("init signal pipe error");
+        _FREE_IF(sig_pipe);
+        return 1;
+    }
+#endif
 
     int rt = uv_run(loop, UV_RUN_DEFAULT);
     if (local) {
@@ -275,7 +286,10 @@ int main(int argc, char const *argv[]) {
     if (socks5) {
         free_socks5_server(socks5);
     }
-    _FREE_IF(sig);
+    _FREE_IF(sig_int);
+#ifndef _WIN32
+    _FREE_IF(sig_pipe);
+#endif
     // uv_loop_close(loop);
     _LOG("tm end");
 

@@ -23,7 +23,7 @@ struct tcp_connection_s {
 
 struct tcp_s {
     int cid;
-    struct sockaddr_in s_addr;
+    struct sockaddr_in sk_addr;
     uv_tcp_t *serv;
     uv_loop_t *loop;
     tcp_connection_t *conns;
@@ -357,7 +357,7 @@ bool start_tcp_server_with_sockaddr(tcp_t *tcp, struct sockaddr_in sockaddr) {
         _FREE_IF(serv);
         return false;
     });
-    tcp->s_addr = sockaddr;
+    tcp->sk_addr = sockaddr;
     r = uv_tcp_bind(serv, (const struct sockaddr *)&sockaddr, 0);
     IF_UV_ERROR(r, "init tcp server bind error", {
         _FREE_IF(serv);

@@ -50,7 +50,7 @@ struct n2n_conn_s {
     void *data;
     n2n_t *n2n;
 
-    u_int32_t msg_read_len;
+    uint32_t msg_read_len;
     char *msg_buf;
 
     UT_hash_handle hh;
