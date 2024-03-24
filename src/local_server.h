@@ -9,4 +9,4 @@ local_server_t *init_local_server(uv_loop_t *loop, const char *listen_ip, uint16
                                   uint16_t target_port, const char *pwd);
 void free_local_server(local_server_t *local);
 
-#endif  // LOCAL_SERVER_H
+#endif /* LOCAL_SERVER_H */

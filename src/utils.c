@@ -34,7 +34,7 @@ char *load_str_file(const char *filename) {
     while (fgets(buf, FILE_R_BUF_SIZE, fp) != NULL) {
         int len = strlen(buf);
         if (rd_len + len > FILE_R_BUF_SIZE * r_buf_cnt) {
-            // TODO:
+            /* TODO: */
             r_buf_cnt *= 2;
             _LOG("realloc read buffer %d", FILE_R_BUF_SIZE * r_buf_cnt);
             p_offset = p - str;

@@ -21,4 +21,4 @@ socks5_server_t *init_socks5_server(uv_loop_t *loop, const char *ip, uint16_t po
                                     int socks5_auth_mode, on_auth_socks5_user_t on_auth_socks5_user);
 void free_socks5_server(socks5_server_t *socks5);
 
-#endif  // SOCKS5_SERVER_H
+#endif /* SOCKS5_SERVER_H */

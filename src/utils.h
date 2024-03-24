@@ -76,8 +76,6 @@
 
 uint64_t ustime();
 uint64_t mstime();
-// void char_to_hex(const char *src, int len, char *des);
-// char *pwd2key(const char *pwd);
 char *load_str_file(const char *filename);
 
-#endif  // UTILS_H
+#endif /* UTILS_H */

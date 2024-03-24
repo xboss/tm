@@ -5,7 +5,6 @@
 #include <uv.h>
 
 #include "tcp.h"
-// #include "utarray.h"
 #include "uthash.h"
 
 #define N2N_CONN_ST_OFF 0
@@ -23,7 +22,6 @@
 
 typedef struct n2n_conn_s n2n_conn_t;
 typedef struct n2n_s n2n_t;
-// typedef struct n2n_msg_s n2n_msg_t;
 
 typedef void (*on_n2n_front_accept_t)(n2n_t *n2n, int conn_id);
 typedef void (*on_n2n_close_t)(n2n_t *n2n, int conn_id);
@@ -43,7 +41,7 @@ struct n2n_conn_s {
     int couple_id;
     n2n_buf_t *n2n_buf_list;
     uv_timer_t *timer;
-    uint64_t start_connect_tm;  // unit: millisecond
+    uint64_t start_connect_tm; /* unit: millisecond */
     int status;
     uint64_t last_r_tm;
     uint64_t last_w_tm;
@@ -62,9 +60,9 @@ struct n2n_s {
     struct sockaddr_in listen_addr;
     struct sockaddr_in target_addr;
     n2n_conn_t *n2n_conns;
-    int r_keepalive;           // unit: second
-    int w_keepalive;           // unit: second
-    uint64_t connect_timeout;  // unit: millisecond
+    int r_keepalive;          /* unit: second */
+    int w_keepalive;          /* unit: second */
+    uint64_t connect_timeout; /* unit: millisecond */
     void *data;
 
     on_n2n_front_accept_t on_n2n_front_accept;
@@ -92,4 +90,4 @@ format: remain_length(4B)payload(nB)
 int n2n_read_msg(const char *buf, ssize_t len, n2n_conn_t *conn, on_read_n2n_msg_t on_read_n2n_msg);
 char *n2n_pack_msg(const char *buf, ssize_t len, int *msg_len);
 
-#endif  // N2N_SERVER_H
+#endif /* N2N_SERVER_H */

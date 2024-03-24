@@ -80,7 +80,7 @@ typedef struct {
     uv_buf_t buf;
 } write_req_t;
 
-inline static int gen_conn_id(tcp_t *tcp) {
+static int gen_conn_id(tcp_t *tcp) {
     assert(tcp);
     return tcp->cid++ % INT_MAX;
 }
@@ -158,7 +158,7 @@ static void on_tcp_shutdown(uv_shutdown_t *req, int status) {
 static void on_tcp_write(uv_write_t *req, int status) {
     _LOG("on_tcp_write");
     if (status == UV_ECANCELED) {
-        // connection has been closed
+        /* connection has been closed */
         _LOG("connection has been closed when writing");
         free_write_req(req);
         return;
@@ -171,7 +171,7 @@ static void on_tcp_write(uv_write_t *req, int status) {
     free_write_req(req);
     if (status >= 0) {
         conn->last_w_tm = mstime();
-        _LOG("on_tcp_write last_w_tm:%llu", conn->last_w_tm);  // TODO:  debug
+        _LOG("on_tcp_write last_w_tm:%llu", conn->last_w_tm); /* TODO:  debug */
     }
     _LOG("on_tcp_write id: %d status: %d", conn->id, status);
 }

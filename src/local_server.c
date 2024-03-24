@@ -11,14 +11,13 @@ struct local_server_s {
 
 static char iv[CIPHER_IV_LEN + 1] = {0};
 
-static inline bool send_to_back(local_server_t *local, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
+static bool send_to_back(local_server_t *local, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
     if (!buf || size <= 0) {
         return n2n_send_to_back(n2n, conn_id, buf, size);
     }
     char *cipher_txt = (char *)buf;
     int cipher_txt_len = size;
     if (local->key) {
-        // bzero(iv, CIPHER_IV_LEN);
         memset(iv, 0, CIPHER_IV_LEN);
         cipher_txt = aes_encrypt(local->key, iv, buf, size, &cipher_txt_len);
     }
@@ -47,32 +46,24 @@ static void on_n2n_front_accept(n2n_t *n2n, int conn_id) {
     GET_LOCAL_INFO;
     n2n_conn->couple_id = n2n_connect_backend(n2n, n2n->target_addr, conn_id, NULL);
     if (n2n_conn->couple_id <= 0) {
-        // error
         n2n_close_conn(n2n, conn_id);
         return;
     }
     n2n_conn->couple_id = n2n_conn->couple_id;
 }
 
-static void on_n2n_close(n2n_t *n2n, int conn_id) {
-    _LOG("on_n2n_close %d", conn_id);
-    // GET_LOCAL_INFO;
-    // n2n_conn->data = NULL;
-    // free_ss5_conn(ss5_conn);
-}
+static void on_n2n_close(n2n_t *n2n, int conn_id) { _LOG("on_n2n_close %d", conn_id); }
 
 static void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
-    IF_GET_N2N_CONN(test_conn, n2n_conn->n2n, n2n_conn->conn_id, { assert(0); });  // TODO: for test
+    IF_GET_N2N_CONN(test_conn, n2n_conn->n2n, n2n_conn->conn_id, { assert(0); }); /* TODO: for test */
     local_server_t *local = (local_server_t *)n2n_conn->n2n->data;
     assert(local);
     char *plan_txt = (char *)buf;
     int plan_txt_len = size;
     if (local->key) {
-        // bzero(iv, CIPHER_IV_LEN);
         memset(iv, 0, CIPHER_IV_LEN);
         plan_txt = aes_decrypt(local->key, iv, buf, size, &plan_txt_len);
     }
-    // _PR(plan_txt, plan_txt_len);
     n2n_send_to_front(n2n_conn->n2n, n2n_conn->couple_id, plan_txt, plan_txt_len);
     if (local->key) {
         _FREE_IF(plan_txt);
@@ -90,9 +81,7 @@ static void on_n2n_backend_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_
     GET_LOCAL_INFO;
 
     int rt = n2n_read_msg(buf, size, n2n_conn, on_read_n2n_msg);
-    // _ERR("msg_read_len: %u", n2n_conn->msg_read_len);
     if (rt < 0) {
-        // error
         _ERR("msg format error %d", conn_id);
         return;
     }
@@ -143,7 +132,7 @@ void free_local_server(local_server_t *local) {
     }
 
     if (local->n2n) {
-        n2n_free_server(local->n2n);  // TODO:
+        n2n_free_server(local->n2n); /* TODO: */
     }
 
     if (local->key) {

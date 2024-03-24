@@ -43,7 +43,7 @@ struct socks5_server_s {
     uv_loop_t *loop;
     n2n_t *n2n;
     char *key;
-    int socks5_auth_mode;  // 0:no auth; 1:username/password
+    int socks5_auth_mode; /* 0:no auth; 1:username/password */
     on_auth_socks5_user_t on_auth_socks5_user;
 };
 
@@ -77,7 +77,7 @@ static socks5_conn_t *clone_ss5_conn(socks5_conn_t *conn) {
 static void free_ss5_conn(socks5_conn_t *conn) {
     _LOG("free_ss5_conn");
     assert(conn);
-    conn->phase = -9999;  // TODO: test
+    conn->phase = -9999; /* TODO: test */
     if (conn->raw) {
         _FREE_IF(conn->raw);
     }
@@ -85,11 +85,10 @@ static void free_ss5_conn(socks5_conn_t *conn) {
     _LOG("free_ss5_conn end");
 }
 
-static inline bool send_to_front(socks5_server_t *socks5, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
+static bool send_to_front(socks5_server_t *socks5, n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
     char *cipher_txt = (char *)buf;
     int cipher_txt_len = size;
     if (socks5->key) {
-        // bzero(iv, CIPHER_IV_LEN);
         memset(iv, 0, CIPHER_IV_LEN);
         cipher_txt = aes_encrypt(socks5->key, iv, buf, size, &cipher_txt_len);
     }
@@ -105,23 +104,10 @@ static inline bool send_to_front(socks5_server_t *socks5, n2n_t *n2n, int conn_i
 }
 
 static bool ss5_req_ack(socks5_server_t *socks5, int conn_id, u_char type, u_char *raw, ssize_t raw_len, n2n_t *n2n) {
-    // printf("raw:\n");
-    // for (size_t i = 0; i < raw_len; i++) {
-    //     printf("%X ", raw[i]);
-    // }
-    // printf("\n");
-
     u_char *ack_raw = (u_char *)_CALLOC(1, raw_len);
     _CHECK_OOM(ack_raw);
     memcpy(ack_raw, raw, raw_len);
     ack_raw[1] = type;
-
-    // printf("ack_raw:\n");
-    // for (size_t i = 0; i < raw_len; i++) {
-    //     printf("%X ", ack_raw[i]);
-    // }
-    // printf("\n");
-
     bool rt = send_to_front(socks5, n2n, conn_id, (const char *)ack_raw, raw_len);
     if (!rt) {
         n2n_close_conn(n2n, conn_id);
@@ -140,7 +126,7 @@ void on_resolved(uv_getaddrinfo_t *req, int status, struct addrinfo *res) {
 
     resolver_req_t *req_ex = (resolver_req_t *)req;
     IF_GET_N2N_CONN(n2n_conn, req_ex->n2n, req_ex->conn_id, {
-        // connection has been closed
+        /* connection has been closed */
         _FREE_IF(req);
         return;
     });
@@ -148,12 +134,8 @@ void on_resolved(uv_getaddrinfo_t *req, int status, struct addrinfo *res) {
     PREPARE_SS5_INFO;
 
     if (res->ai_family == AF_INET) {
-        // ipv4
+        /* ipv4 */
         uint16_t sin_port = ss5_conn->target_addr.sin_port;
-
-        // uint16_t port = ntohs(sin_port);  // TODO: test
-        // _LOG("port: %u", port);
-
         ss5_conn->target_addr = (*(struct sockaddr_in *)res->ai_addr);
         ss5_conn->target_addr.sin_port = sin_port;
         socks5_conn_t *new_ss5_conn = clone_ss5_conn(ss5_conn);
@@ -164,13 +146,12 @@ void on_resolved(uv_getaddrinfo_t *req, int status, struct addrinfo *res) {
             _FREE_IF(req);
             return;
         }
-        // new_ss5_conn->n2n_conn = n2n_get_conn(socks5->n2n, bk_id);
     } else if (res->ai_family == AF_INET6) {
-        // ipv6
-        // TODO:
+        /* ipv6 */
+        /* TODO: */
     } else {
-        // ipv4 or ipv6
-        // TODO:
+        /* ipv4 or ipv6 */
+        /* TODO: */
     }
 
     _FREE_IF(req);
@@ -210,9 +191,10 @@ static void ss5_auth(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     }
     int nmethods = (int)buf[1];
     char ok[2] = {SS5_VER, 0x00};
-    for (int i = 0; i < nmethods; i++) {
+    int i;
+    for (i = 0; i < nmethods; i++) {
         if (buf[2 + i] == 0x00 && socks5->socks5_auth_mode == 0) {
-            // NO AUTHENTICATION REQUIRED
+            /* NO AUTHENTICATION REQUIRED */
             if (!send_to_front(socks5, n2n, n2n_conn->conn_id, ok, 2)) {
                 n2n_close_conn(n2n, n2n_conn->conn_id);
                 return;
@@ -221,7 +203,7 @@ static void ss5_auth(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
             }
             break;
         } else if (buf[2 + i] == 0x02 && socks5->socks5_auth_mode == 1) {
-            // USERNAME/PASSWORD
+            /* USERNAME/PASSWORD */
             ok[1] = 0x02;
             if (!send_to_front(socks5, n2n, n2n_conn->conn_id, ok, 2)) {
                 n2n_close_conn(n2n, n2n_conn->conn_id);
@@ -252,30 +234,17 @@ static void ss5_auth_np(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
         n2n_close_conn(n2n, n2n_conn->conn_id);
         return;
     }
-    // assert(name_len >= 0);
     int pwd_len = buf[2 + name_len];
     if (pwd_len < 0) {
         _ERR("socks5 auth password length error");
         n2n_close_conn(n2n, n2n_conn->conn_id);
         return;
     }
-    // assert(pwd_len >= 0);
-    // char tmp[UCHAR_MAX + 1] = {0};
-    // char *name = _CALLOC(1, name_len + 1);
-    // _CHECK_OOM(name);
-    // memcpy(tmp, buf + 2, name_len);
-    // _LOG("name: %s", name);
-    // char *pwd = _CALLOC(1, pwd_len + 1);
-    // _CHECK_OOM(pwd);
-    // memcpy(pwd, buf + 3 + name_len, pwd_len);
-    // _LOG("pwd: %s", pwd);
     int auth_rt = 0;
     if (socks5->on_auth_socks5_user) {
         auth_rt =
             socks5->on_auth_socks5_user((const char *)(buf + 2), name_len, (const char *)(buf + 3 + name_len), pwd_len);
     }
-    // _FREE_IF(name);
-    // _FREE_IF(pwd);
     char msg[2] = {SS5_AUTH_NP_VER, 0x00};
     if (auth_rt != 0) {
         msg[1] = 0x01;
@@ -295,12 +264,11 @@ static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     if (*buf != SS5_VER || size < 7) {
         _ERR("socks5 request error version %X size: %ld", *buf, size);
         return;
-        // goto ss5_auth_req_error;
     }
 
     u_char cmd = buf[1];
     if (cmd == SS5_CMD_BIND || cmd == SS5_CMD_UDP_ASSOCIATE) {
-        // TODO: support bind and udp associate
+        /* TODO: support bind and udp associate */
         _LOG("now only 'connect' command is supported.");
         return;
     }
@@ -315,7 +283,6 @@ static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
         ss5_conn->raw = (u_char *)_CALLOC(1, size);
         _CHECK_OOM(ss5_conn->raw);
         memcpy(ss5_conn->raw, buf, size);
-        // struct sockaddr_in addr;
         ss5_conn->target_addr.sin_family = AF_INET;
         ss5_conn->target_addr.sin_addr.s_addr = *(uint32_t *)(buf + 4);
         memcpy(&(ss5_conn->target_addr.sin_port), buf + 8, sizeof(ss5_conn->target_addr.sin_port));
@@ -329,8 +296,7 @@ static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
         }
     } else if (atyp == SS5_ATYP_IPV6) {
         _LOG("ss5 ipv6 type");
-        // uint16_t port = ntohs((uint16_t)buf[19]);
-        // TODO: connect to dest
+        /* TODO: connect to dest */
     } else if (atyp == SS5_ATYP_DOMAIN) {
         _LOG("ss5 domain type");
 
@@ -339,14 +305,14 @@ static void ss5_req(const u_char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
         _CHECK_OOM(ss5_conn->raw);
         memcpy(ss5_conn->raw, buf, size);
 
-        int d_len = (int)buf[4];  // TODO: unsigned to signed overflow?
+        int d_len = (int)buf[4]; /* TODO: unsigned to signed overflow? */
         char *domain = (char *)_CALLOC(1, d_len + 1);
         _CHECK_OOM(domain);
         memcpy(domain, buf + 5, d_len);
 
         memcpy(&(ss5_conn->target_addr.sin_port), buf + 4 + d_len + 1, sizeof(ss5_conn->target_addr.sin_port));
         _LOG("%s", domain);
-        // resolve DNS
+        /* resolve DNS */
         if (!resolve_domain(socks5->loop, n2n_conn, domain, AF_INET)) {
             _FREE_IF(domain);
             ss5_req_ack(socks5, n2n_conn->conn_id, SS5_REP_HOST_ERR, ss5_conn->raw, ss5_conn->raw_len, n2n);
@@ -393,7 +359,7 @@ void on_n2n_close(n2n_t *n2n, int conn_id) {
 }
 
 void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
-    IF_GET_N2N_CONN(test_conn, n2n_conn->n2n, n2n_conn->conn_id, { assert(0); });  // TODO: for test
+    IF_GET_N2N_CONN(test_conn, n2n_conn->n2n, n2n_conn->conn_id, { assert(0); }); /* TODO: for test */
     socks5_conn_t *ss5_conn = (socks5_conn_t *)n2n_conn->data;
     assert(ss5_conn);
     socks5_server_t *socks5 = ss5_conn->socks5;
@@ -402,14 +368,11 @@ void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
     char *plan_txt = (char *)buf;
     int plan_txt_len = size;
     if (socks5->key) {
-        // bzero(iv, CIPHER_IV_LEN);
         memset(iv, 0, CIPHER_IV_LEN);
         plan_txt = aes_decrypt(socks5->key, iv, buf, size, &plan_txt_len);
     }
-    // _PR(plan_txt, plan_txt_len);
 
     n2n_t *n2n = n2n_conn->n2n;
-    // int conn_id = n2n_conn->conn_id;
     switch (ss5_conn->phase) {
         case SS5_PHASE_AUTH:
             ss5_auth((const u_char *)plan_txt, plan_txt_len, n2n_conn);
@@ -421,7 +384,7 @@ void on_read_n2n_msg(const char *buf, ssize_t size, n2n_conn_t *n2n_conn) {
             ss5_req((const u_char *)plan_txt, plan_txt_len, n2n_conn);
             break;
         case SS5_PHASE_DATA:
-            // _LOG("phase data send id: %d", conn_id);
+            /* _LOG("phase data send id: %d", conn_id); */
             if (!n2n_send_to_back(n2n, n2n_conn->couple_id, plan_txt, plan_txt_len)) {
                 n2n_close_conn(n2n, n2n_conn->couple_id);
             }
@@ -440,30 +403,9 @@ void on_n2n_front_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
 
     int rt = n2n_read_msg(buf, size, n2n_conn, on_read_n2n_msg);
     if (rt < 0) {
-        // error
         _LOG("msg format error %d", conn_id);
         return;
     }
-
-    // switch (ss5_conn->phase) {
-    //     case SS5_PHASE_AUTH:
-    //         ss5_auth((const u_char *)buf, size, n2n_conn);
-    //         break;
-    //     case SS5_PHASE_AUTH_NP:
-    //         ss5_auth_np((const u_char *)buf, size, n2n_conn);
-    //         break;
-    //     case SS5_PHASE_REQ:
-    //         ss5_req((const u_char *)buf, size, n2n_conn);
-    //         break;
-    //     case SS5_PHASE_DATA:
-    //         _LOG("phase data send id: %d", conn_id);
-    //         if (!n2n_send_to_back(n2n, n2n_conn->couple_id, buf, size)) {
-    //             n2n_close_conn(n2n, n2n_conn->couple_id);
-    //         }
-    //         break;
-    //     default:
-    //         break;
-    // }
 }
 
 void on_n2n_backend_recv(n2n_t *n2n, int conn_id, const char *buf, ssize_t size) {
@@ -522,7 +464,7 @@ void free_socks5_server(socks5_server_t *socks5) {
     }
 
     if (socks5->n2n) {
-        n2n_free_server(socks5->n2n);  // TODO:
+        n2n_free_server(socks5->n2n); /* TODO: */
     }
 
     if (socks5->key) {

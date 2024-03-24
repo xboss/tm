@@ -7,7 +7,7 @@
 #include "utils.h"
 
 static const int align_size = 16;
-inline static char *pkcs7_padding(const char *in, int in_len, int *out_len) {
+static char *pkcs7_padding(const char *in, int in_len, int *out_len) {
     int remainder = in_len % align_size;
     int padding_size = remainder == 0 ? align_size : align_size - remainder;
     *out_len = in_len + padding_size;
@@ -17,18 +17,10 @@ inline static char *pkcs7_padding(const char *in, int in_len, int *out_len) {
     return out;
 }
 
-inline static int pkcs7_unpadding(const char *in, int in_len) {
+static int pkcs7_unpadding(const char *in, int in_len) {
     char padding_size = in[in_len - 1];
     return (int)padding_size;
 }
-
-// inline static void char_to_hex(const char *src, int len, char *des) {
-//     char hex_table[] = {'0', '1', '2', '3', '4', '5', '6', '7', '8', '9', 'A', 'B', 'C', 'D', 'E', 'F'};
-//     while (len--) {
-//         *(des++) = hex_table[(*src) >> 4];
-//         *(des++) = hex_table[*(src++) & 0x0f];
-//     }
-// }
 
 char *pwd2key(const char *pwd) {
     size_t pwd_len = strnlen(pwd, CIPHER_KEY_LEN);
